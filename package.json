@@ -1,0 +1,27 @@
+{
+  "name": "sch-ler-lernapp",
+  "version": "1.0.0",
+  "description": "Eine Lernapp für Schüler - MVP Version",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RobRoy001/sch-ler-lernapp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/RobRoy001/sch-ler-lernapp/issues"
+  },
+  "homepage": "https://github.com/RobRoy001/sch-ler-lernapp#readme",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "pg": "^8.23.0"
+  }
+}
