@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
+import UploadPage from './pages/UploadPage';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -17,7 +18,7 @@ function App() {
 
   const verifyToken = async (token) => {
     try {
-      const response = await fetch('http://localhost:3000/api/user/profile', {
+      const response = await fetch('http://localhost:5000/api/auth/profile', {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
       });
@@ -50,7 +51,14 @@ function App() {
   };
 
   if (loading) {
-    return (<div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950 flex items-center justify-center"><div className="text-center"><div className="text-4xl mb-4">📚</div><p className="text-slate-400">Wird geladen...</p></div></div>);
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-4">📚</div>
+          <p className="text-slate-400">Wird geladen...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -65,6 +73,7 @@ function App() {
         ) : (
           <>
             <Route path="/" element={<DashboardPage user={user} onLogout={handleLogout} />} />
+            <Route path="/upload" element={<UploadPage />} />
             <Route path="*" element={<Navigate to="/" />} />
           </>
         )}
