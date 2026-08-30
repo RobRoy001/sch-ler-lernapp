@@ -32,25 +32,34 @@ export default function UploadPage() {
   const handleProceed = async () => {
     setIsProcessing(true);
     try {
-      // Upload files + create sources
       const token = localStorage.getItem('token');
-      
+      let lastSourceId = null;
+
       // 1. Upload all files
       for (const uploadedFile of uploadedFiles) {
         const formData = new FormData();
         formData.append('file', uploadedFile.file);
         
-        const res = await fetch('http://localhost:5000/api/content/upload', {
+        console.log('[Upload] Uploading file:', uploadedFile.file.name);
+        
+        const uploadRes = await fetch('http://localhost:5000/api/content/upload', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` },
           body: formData
         });
         
-        if (!res.ok) throw new Error('Upload fehlgeschlagen');
-        const data = await res.json();
+        if (!uploadRes.ok) {
+          const errorData = await uploadRes.json();
+          throw new Error(errorData.error || 'Upload fehlgeschlagen');
+        }
+        
+        const uploadData = await uploadRes.json();
+        console.log('[Upload] Upload erfolgreich:', uploadData);
         
         // Create content source
-        await fetch('http://localhost:5000/api/content/sources', {
+        console.log('[Content Source] Creating for file ID:', uploadData.file.id);
+        
+        const sourceRes = await fetch('http://localhost:5000/api/content/sources', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -58,15 +67,26 @@ export default function UploadPage() {
           },
           body: JSON.stringify({
             content_type: 'uploaded_document',
-            reference_id: data.file.id
+            reference_id: uploadData.file.id
           })
         });
+        
+        if (!sourceRes.ok) {
+          const errorData = await sourceRes.json();
+          throw new Error(errorData.error || 'Content Source erstellen fehlgeschlagen');
+        }
+        
+        const sourceData = await sourceRes.json();
+        lastSourceId = sourceData.source.id;
+        console.log('[Content Source] Created with ID:', lastSourceId);
       }
       
-      // 2. If book selected, create book source
-      if (selectedBook && selectedChapters.length > 0) {
+      // 2. If book chapters selected
+      if (selectedChapters.length > 0) {
         for (const chapter of selectedChapters) {
-          await fetch('http://localhost:5000/api/content/sources', {
+          console.log('[Book Chapter] Creating for chapter:', chapter.id);
+          
+          const sourceRes = await fetch('http://localhost:5000/api/content/sources', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -78,13 +98,30 @@ export default function UploadPage() {
               reference_book_id: selectedBook.id
             })
           });
+          
+          if (!sourceRes.ok) {
+            const errorData = await sourceRes.json();
+            throw new Error(errorData.error || 'Book Chapter Source erstellen fehlgeschlagen');
+          }
+          
+          const sourceData = await sourceRes.json();
+          lastSourceId = sourceData.source.id;
         }
       }
       
-      // Redirect to processing (Phase 3)
-      navigate('/processing');
+      if (!lastSourceId) {
+        throw new Error('Keine Inhalte hochgeladen');
+      }
+      
+      // 3. Redirect to processing
+      console.log('[Redirect] Navigating to processing page with sourceId:', lastSourceId);
+      navigate(`/processing/${lastSourceId}`);
+      
     } catch (err) {
+      console.error('[Error]', err);
       setError(err.message || 'Fehler beim Hochladen');
+      setIsProcessing(false);
+    } finally {
       setIsProcessing(false);
     }
   };

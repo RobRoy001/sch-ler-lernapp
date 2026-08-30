@@ -4,6 +4,9 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import UploadPage from './pages/UploadPage';
+import ProcessingPage from './pages/ProcessingPage';
+import TestPlayer from './pages/TestPlayer';
+import ResultsPage from './pages/ResultsPage';  // ← NEU!
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -31,6 +34,7 @@ function App() {
         setIsAuthenticated(false);
       }
     } catch (error) {
+      console.error('Token Verification Error:', error);
       localStorage.removeItem('token');
       setIsAuthenticated(false);
     } finally {
@@ -74,6 +78,9 @@ function App() {
           <>
             <Route path="/" element={<DashboardPage user={user} onLogout={handleLogout} />} />
             <Route path="/upload" element={<UploadPage />} />
+            <Route path="/processing/:sourceId" element={<ProcessingPage />} />
+            <Route path="/test/:sourceId" element={<TestPlayer />} />
+            <Route path="/results/:submissionId" element={<ResultsPage />} />  {/* ← NEU! */}
             <Route path="*" element={<Navigate to="/" />} />
           </>
         )}

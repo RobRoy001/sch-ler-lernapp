@@ -54,7 +54,7 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Multer Instance
+// Multer Instance - EXPORT DIREKT!
 const upload = multer({
   storage,
   fileFilter,
@@ -64,54 +64,5 @@ const upload = multer({
   }
 });
 
-// Export verschiedene Upload-Optionen
-module.exports = {
-  // Single file upload
-  uploadSingle: upload.single('file'),
-  
-  // Multiple files upload (max 5)
-  uploadMultiple: upload.array('files', 5),
-  
-  // Error Handler Middleware
-  handleUploadError: (err, req, res, next) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ 
-          error: 'Datei zu groß (max 10 MB)' 
-        });
-      }
-      if (err.code === 'LIMIT_FILE_COUNT') {
-        return res.status(400).json({ 
-          error: 'Zu viele Dateien (max 5)' 
-        });
-      }
-      return res.status(400).json({ 
-        error: `Upload-Fehler: ${err.message}` 
-      });
-    }
-    
-    if (err) {
-      return res.status(400).json({ 
-        error: err.message 
-      });
-    }
-    
-    next();
-  },
-  
-  // Utilities
-  getUploadDir: () => uploadDir,
-  
-  // Datei löschen
-  deleteFile: (filePath) => {
-    return new Promise((resolve, reject) => {
-      fs.unlink(filePath, (err) => {
-        if (err && err.code !== 'ENOENT') {
-          reject(err);
-        } else {
-          resolve();
-        }
-      });
-    });
-  }
-};
+// Export die Multer-Instanz direkt
+module.exports = upload;

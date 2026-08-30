@@ -44,9 +44,9 @@ router.post('/register', async (req, res) => {
 
     // User in DB einfügen
     const result = await pool.query(
-      'INSERT INTO users (email, password_hash, name, grade_level) VALUES ($1, $2, $3, $4) RETURNING id, email, name, grade_level',
-      [email, hashedPassword, name, grade_level]
-    );
+  'INSERT INTO users (email, password, name, grade_level) VALUES ($1, $2, $3, $4) RETURNING id, email, name, grade_level',
+  [email, hashedPassword, name, grade_level]
+);
 
     const user = result.rows[0];
 
@@ -88,7 +88,7 @@ router.post('/login', async (req, res) => {
     const user = result.rows[0];
 
     // Password überprüfen
-    const passwordMatch = await bcrypt.compare(password, user.password_hash);
+    const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) {
       return res.status(401).json({ error: 'E-Mail oder Passwort ungültig' });
     }
