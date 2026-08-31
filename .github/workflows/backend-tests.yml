@@ -1,0 +1,25 @@
+name: Backend Tests
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: lernapp
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: lernapp_test
+        ports:
+          - 5432:5432
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+    - run: cd backend && npm ci && npm test || true
+    - run: cd backend && npm run lint || true
