@@ -1,39 +1,24 @@
 {
-      "name": "schler-lernapp-backend",
-        "version": "1.0.0",
-          "description": "KI-Agent-basierte Lernapp Backend",
-            "main": "src/server.js",
-              "scripts": {
-                  "start": "node src/server.js",
-                      "dev": "nodemon src/server.js",
-                          "test": "jest",
-                              "test:watch": "jest --watch",
-                                  "test:coverage": "jest --coverage",
-                                      "migrate": "node scripts/migrate.js",
-                                          "seed": "node scripts/seed.js"
-                                            },
-                                              "keywords": [
-                                                  "education",
-                                                      "ai",
-                                                          "learning"
-                                                            ],
-                                                              "author": "",
-                                                                "license": "MIT",
-                                                                  "dependencies": {
-                                                                      "bcryptjs": "^2.4.3",
-                                                                          "cors": "^2.8.5",
-                                                                              "dotenv": "^16.3.1",
-                                                                                  "express": "^4.18.2",
-                                                                                      "express-rate-limit": "^8.7.0",
-                                                                                          "jsonwebtoken": "^9.0.0",
-                                                                                              "multer": "^2.3.0",
-                                                                                                  "openai": "^4.104.0",
-                                                                                                      "pg": "^8.11.2",
-                                                                                                          "tesseract.js": "^7.0.0"
-                                                                                                            },
-                                                                                                              "devDependencies": {
-                                                                                                                  "jest": "^29.7.0",
-                                                                                                                      "nodemon": "^3.0.1",
-                                                                                                                          "supertest": "^6.3.3"
-                                                                                                                            }
-                                                                                                                            }
+  "name": "lernapp-backend",
+  "version": "1.0.0",
+  "description": "LernApp Backend - Test Processing",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "jest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "pg": "^8.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "jest": "^29.5.0"
+  }
+}
