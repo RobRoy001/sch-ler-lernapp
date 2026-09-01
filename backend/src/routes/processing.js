@@ -17,7 +17,6 @@ let db = null;
 let usingMockMode = false;
 
 try {
-  db = require('./database-connection');
 } catch (error) {
   console.warn('⚠️  Database not available - Running in MOCK MODE');
   console.warn('Error:', error.message);
