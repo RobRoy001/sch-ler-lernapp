@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 
 // MultipleChoice Component
 function MultipleChoiceQuestion({ question, answer, onAnswer }) {
-  // Parse options wenn String
   let options = [];
   try {
     if (typeof question.options === 'string') {
@@ -17,31 +16,29 @@ function MultipleChoiceQuestion({ question, answer, onAnswer }) {
   }
 
   return (
-    <div style={{ marginBottom: '24px' }}>
-      <h3 style={{ fontSize: '18px', marginBottom: '16px', color: 'white' }}>
+    <div className="mb-6">
+      <h3 className="font-display text-lg font-semibold text-gray-900 mb-4">
         {question.question_text}
       </h3>
       <div>
         {options.map((option, idx) => (
-          <label key={idx} style={{
-            display: 'block',
-            marginBottom: '12px',
-            cursor: 'pointer',
-            padding: '12px',
-            border: answer === option ? '2px solid #3b82f6' : '2px solid #475569',
-            borderRadius: '8px',
-            backgroundColor: answer === option ? '#1e293b' : '#0f172a',
-            transition: 'all 0.2s'
-          }}>
+          <label
+            key={idx}
+            className={`block mb-3 cursor-pointer p-3.5 rounded-md border-2 transition ${
+              answer === option
+                ? 'border-primary bg-primary-light/40'
+                : 'border-gray-200 bg-white hover:border-primary/40'
+            }`}
+          >
             <input
               type="radio"
               name={`question-${question.id}`}
               value={option}
               checked={answer === option}
               onChange={(e) => onAnswer(e.target.value)}
-              style={{ marginRight: '12px', cursor: 'pointer' }}
+              className="mr-3 accent-primary cursor-pointer"
             />
-            <span style={{ color: '#e2e8f0' }}>{option}</span>
+            <span className="text-gray-800">{option}</span>
           </label>
         ))}
       </div>
@@ -52,8 +49,8 @@ function MultipleChoiceQuestion({ question, answer, onAnswer }) {
 // FillGap Component
 function FillGapQuestion({ question, answer, onAnswer }) {
   return (
-    <div style={{ marginBottom: '24px' }}>
-      <h3 style={{ fontSize: '18px', marginBottom: '16px', color: 'white' }}>
+    <div className="mb-6">
+      <h3 className="font-display text-lg font-semibold text-gray-900 mb-4">
         {question.question_text}
       </h3>
       <input
@@ -61,16 +58,7 @@ function FillGapQuestion({ question, answer, onAnswer }) {
         value={answer || ''}
         onChange={(e) => onAnswer(e.target.value)}
         placeholder="Antworte hier..."
-        style={{
-          width: '100%',
-          padding: '12px',
-          backgroundColor: '#1e293b',
-          border: '2px solid #475569',
-          borderRadius: '8px',
-          color: '#e2e8f0',
-          fontSize: '16px',
-          boxSizing: 'border-box'
-        }}
+        className="w-full h-11 px-4 bg-white border-2 border-gray-200 rounded-md text-gray-900 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition"
       />
     </div>
   );
@@ -80,7 +68,7 @@ function FillGapQuestion({ question, answer, onAnswer }) {
 export default function TestPlayer() {
   const navigate = useNavigate();
   const { sourceId } = useParams();
-  
+
   const [test, setTest] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -115,7 +103,6 @@ export default function TestPlayer() {
 
         if (data.tests && data.tests.length > 0) {
           setTest(data.tests[0]);
-          // Initialize answers
           const initialAnswers = {};
           data.tests[0].questions?.forEach(q => {
             initialAnswers[q.id] = '';
@@ -137,30 +124,16 @@ export default function TestPlayer() {
 
   if (loading) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'white'
-      }}>
-        <div>Lädt Test...</div>
+      <div className="min-h-screen bg-canvas flex items-center justify-center text-gray-500">
+        Lädt Test…
       </div>
     );
   }
 
   if (error || !test) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#fca5a5'
-      }}>
-        <div>Fehler: {error || 'Kein Test geladen'}</div>
+      <div className="min-h-screen bg-canvas flex items-center justify-center text-error-dark">
+        Fehler: {error || 'Kein Test geladen'}
       </div>
     );
   }
@@ -168,12 +141,12 @@ export default function TestPlayer() {
   const questions = test.questions || [];
   const currentQuestion = questions[currentQuestionIndex];
   const currentAnswer = answers[currentQuestion?.id] || '';
+  const progressPct = ((currentQuestionIndex + 1) / questions.length) * 100;
 
   const handleNext = () => {
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else {
-      // Alle Fragen beantwortet - Submit
       submitTest();
     }
   };
@@ -214,9 +187,8 @@ export default function TestPlayer() {
       const result = await response.json();
       console.log('Test Result:', result);
 
-      // Redirect to results
-      navigate(`/results/${test.id}`, { 
-        state: { 
+      navigate(`/results/${test.id}`, {
+        state: {
           score: result.score,
           totalPoints: result.total_points,
           accuracy: result.accuracy_percentage,
@@ -236,57 +208,39 @@ export default function TestPlayer() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-      padding: '40px 20px',
-      fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif'
-    }}>
-      <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+    <div className="min-h-screen bg-canvas py-10 px-5">
+      <div className="max-w-2xl mx-auto">
         {/* Header */}
-        <div style={{ marginBottom: '40px' }}>
-          <h1 style={{ fontSize: '28px', color: 'white', marginBottom: '8px' }}>
+        <div className="mb-8">
+          <h1 className="font-display text-2xl font-bold text-gray-900 mb-1">
             {test.title}
           </h1>
-          <p style={{ color: '#cbd5e1', marginBottom: '16px' }}>
+          <p className="text-gray-500 mb-4">
             {test.total_questions} Fragen • {test.difficulty}
           </p>
 
           {/* Progress Bar */}
-          <div style={{
-            backgroundColor: '#334155',
-            borderRadius: '12px',
-            overflow: 'hidden',
-            height: '24px',
-            marginBottom: '16px'
-          }}>
-            <div style={{
-              width: `${((currentQuestionIndex + 1) / questions.length) * 100}%`,
-              height: '100%',
-              backgroundColor: '#3b82f6',
-              transition: 'width 0.3s ease'
-            }}></div>
+          <div
+            className="bg-gray-200 rounded-lg overflow-hidden h-3 mb-3"
+            role="progressbar"
+            aria-valuenow={Math.round(progressPct)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full bg-primary rounded-lg transition-all duration-300"
+              style={{ width: `${progressPct}%` }}
+            />
           </div>
 
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            color: '#94a3b8',
-            fontSize: '14px'
-          }}>
+          <div className="flex justify-between text-gray-500 text-sm">
             <span>Frage {currentQuestionIndex + 1} von {questions.length}</span>
-            <span>{Math.round(((currentQuestionIndex + 1) / questions.length) * 100)}%</span>
+            <span>{Math.round(progressPct)}%</span>
           </div>
         </div>
 
         {/* Question */}
-        <div style={{
-          backgroundColor: '#1e293b',
-          border: '1px solid #475569',
-          borderRadius: '12px',
-          padding: '32px',
-          marginBottom: '32px'
-        }}>
+        <div className="bg-cream border border-gray-100 rounded-lg p-6 md:p-8 mb-8 shadow-sm">
           {currentQuestion && (
             <>
               {currentQuestion.type === 'multiple_choice' && (
@@ -312,15 +266,7 @@ export default function TestPlayer() {
               )}
 
               {currentQuestion.explanation && (
-                <div style={{
-                  marginTop: '24px',
-                  padding: '16px',
-                  backgroundColor: '#0f172a',
-                  borderRadius: '8px',
-                  borderLeft: '4px solid #3b82f6',
-                  fontSize: '14px',
-                  color: '#cbd5e1'
-                }}>
+                <div className="mt-6 p-4 bg-primary-light/30 rounded-md border-l-4 border-primary text-sm text-gray-700">
                   <strong>Erklärung:</strong> {currentQuestion.explanation}
                 </div>
               )}
@@ -329,46 +275,22 @@ export default function TestPlayer() {
         </div>
 
         {/* Navigation */}
-        <div style={{
-          display: 'flex',
-          gap: '12px',
-          justifyContent: 'space-between'
-        }}>
+        <div className="flex gap-3 justify-between">
           <button
             onClick={handleBack}
             disabled={currentQuestionIndex === 0}
-            style={{
-              padding: '12px 24px',
-              backgroundColor: currentQuestionIndex === 0 ? '#334155' : '#475569',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '16px',
-              fontWeight: '600',
-              cursor: currentQuestionIndex === 0 ? 'not-allowed' : 'pointer',
-              opacity: currentQuestionIndex === 0 ? 0.5 : 1,
-              transition: 'all 0.2s'
-            }}
+            className={`px-6 py-3 rounded-md font-semibold transition ${
+              currentQuestionIndex === 0
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
           >
             ← Zurück
           </button>
 
           <button
             onClick={handleNext}
-            style={{
-              padding: '12px 24px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '16px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              flex: 1,
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={(e) => e.target.style.backgroundColor = '#2563eb'}
-            onMouseOut={(e) => e.target.style.backgroundColor = '#3b82f6'}
+            className="flex-1 bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold shadow-md hover:shadow-lg transition"
           >
             {currentQuestionIndex === questions.length - 1 ? 'Abschließen' : 'Weiter →'}
           </button>

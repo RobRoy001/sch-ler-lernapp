@@ -6,7 +6,9 @@ import DashboardPage from './pages/DashboardPage';
 import UploadPage from './pages/UploadPage';
 import ProcessingPage from './pages/ProcessingPage';
 import TestPlayer from './pages/TestPlayer';
-import ResultsPage from './pages/ResultsPage';  // ← NEU!
+import ResultsPage from './pages/ResultsPage';
+import SettingsPage from './pages/SettingsPage';
+import Logo from './components/Logo';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -56,10 +58,12 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-canvas flex items-center justify-center">
         <div className="text-center">
-          <div className="text-4xl mb-4">📚</div>
-          <p className="text-slate-400">Wird geladen...</p>
+          <div className="flex justify-center mb-4">
+            <Logo size={56} />
+          </div>
+          <p className="text-gray-500 font-body">Wird geladen…</p>
         </div>
       </div>
     );
@@ -71,7 +75,7 @@ function App() {
         {!isAuthenticated ? (
           <>
             <Route path="/" element={<LoginPage onLoginSuccess={handleLoginSuccess} />} />
-            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/register" element={<RegisterPage onLoginSuccess={handleLoginSuccess} />} />
             <Route path="*" element={<Navigate to="/" />} />
           </>
         ) : (
@@ -80,7 +84,8 @@ function App() {
             <Route path="/upload" element={<UploadPage />} />
             <Route path="/processing/:sourceId" element={<ProcessingPage />} />
             <Route path="/test/:sourceId" element={<TestPlayer />} />
-            <Route path="/results/:submissionId" element={<ResultsPage />} />  {/* ← NEU! */}
+            <Route path="/results/:submissionId" element={<ResultsPage />} />
+            <Route path="/settings" element={<SettingsPage user={user} onLogout={handleLogout} />} />
             <Route path="*" element={<Navigate to="/" />} />
           </>
         )}

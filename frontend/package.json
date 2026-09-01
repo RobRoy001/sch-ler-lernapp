@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "archiver": "^8.0.0",
     "lucide-react": "^1.37.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

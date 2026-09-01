@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, ChevronDown, Loader } from 'lucide-react';
+import { BookOpen, Loader } from 'lucide-react';
 
 export default function BookCatalogSelector({
   selectedBook,
@@ -61,16 +61,16 @@ export default function BookCatalogSelector({
   return (
     <div className="space-y-6">
       {/* Filters */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">Filter</h3>
-        
+      <div className="bg-cream border border-gray-100 rounded-lg p-6 shadow-sm">
+        <h3 className="font-display text-base font-semibold text-gray-900 mb-4">Filter</h3>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-slate-300 text-sm mb-2">Klassenstufe</label>
+            <label className="block text-gray-500 text-sm mb-1.5">Klassenstufe</label>
             <select
               value={gradeFilter}
               onChange={(e) => setGradeFilter(e.target.value)}
-              className="w-full bg-slate-700 text-white px-3 py-2 rounded-lg border border-slate-600 focus:border-blue-500 outline-none"
+              className="w-full h-11 bg-white text-gray-900 px-3 rounded-md border border-gray-300 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition"
             >
               <option value="7">Klasse 7</option>
               <option value="8">Klasse 8</option>
@@ -79,11 +79,11 @@ export default function BookCatalogSelector({
           </div>
 
           <div>
-            <label className="block text-slate-300 text-sm mb-2">Fach</label>
+            <label className="block text-gray-500 text-sm mb-1.5">Fach</label>
             <select
               value={subjectFilter}
               onChange={(e) => setSubjectFilter(e.target.value)}
-              className="w-full bg-slate-700 text-white px-3 py-2 rounded-lg border border-slate-600 focus:border-blue-500 outline-none"
+              className="w-full h-11 bg-white text-gray-900 px-3 rounded-md border border-gray-300 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition"
             >
               <option value="Mathe">Mathe</option>
               <option value="Deutsch">Deutsch</option>
@@ -94,37 +94,37 @@ export default function BookCatalogSelector({
       </div>
 
       {/* Books List */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">Verfügbare Bücher</h3>
+      <div className="bg-cream border border-gray-100 rounded-lg p-6 shadow-sm">
+        <h3 className="font-display text-base font-semibold text-gray-900 mb-4">Verfügbare Bücher</h3>
 
         {error && (
-          <div className="text-red-400 text-sm mb-4">{error}</div>
+          <div className="text-error-dark text-sm mb-4">{error}</div>
         )}
 
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader size={24} className="text-blue-400 animate-spin" />
+            <Loader size={22} className="text-primary animate-spin" />
           </div>
         ) : books.length === 0 ? (
-          <p className="text-slate-400 text-sm">Keine Bücher gefunden</p>
+          <p className="text-gray-400 text-sm">Keine Bücher gefunden</p>
         ) : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {books.map(book => (
               <button
                 key={book.id}
                 onClick={() => handleBookSelect(book)}
-                className={`w-full text-left p-4 rounded-lg transition border ${
+                className={`text-left p-4 rounded-md transition border ${
                   selectedBook?.id === book.id
-                    ? 'bg-blue-600/20 border-blue-500'
-                    : 'bg-slate-700/30 border-slate-600 hover:border-slate-500'
+                    ? 'bg-primary-light/40 border-primary'
+                    : 'bg-white border-gray-100 hover:border-primary/40 hover:-translate-y-0.5 hover:shadow-sm'
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <BookOpen size={20} className="mt-1 flex-shrink-0 text-blue-400" />
-                  <div className="flex-1">
-                    <p className="font-semibold text-white">{book.title}</p>
-                    <p className="text-slate-400 text-sm">{book.author}</p>
-                    <p className="text-slate-500 text-xs mt-1">{book.total_pages} Seiten</p>
+                  <BookOpen size={20} className="mt-1 flex-shrink-0 text-primary" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 text-sm truncate">{book.title}</p>
+                    <p className="text-gray-500 text-xs">{book.author}</p>
+                    <p className="text-gray-400 text-xs mt-1">{book.total_pages} Seiten</p>
                   </div>
                 </div>
               </button>
@@ -135,28 +135,28 @@ export default function BookCatalogSelector({
 
       {/* Chapters Selection */}
       {selectedBook && chapters.length > 0 && (
-        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">
-            Kapitel aus "{selectedBook.title}"
+        <div className="bg-cream border border-gray-100 rounded-lg p-6 shadow-sm">
+          <h3 className="font-display text-base font-semibold text-gray-900 mb-4">
+            Kapitel aus „{selectedBook.title}"
           </h3>
 
           <div className="space-y-2">
             {chapters.map(chapter => (
               <label
                 key={chapter.id}
-                className="flex items-center p-3 rounded-lg bg-slate-700/30 border border-slate-600 hover:border-slate-500 cursor-pointer transition"
+                className="flex items-center p-3 rounded-md bg-white border border-gray-100 hover:border-primary/40 cursor-pointer transition"
               >
                 <input
                   type="checkbox"
                   checked={selectedChapters.some(c => c.id === chapter.id)}
                   onChange={() => handleChapterToggle(chapter)}
-                  className="w-4 h-4 accent-blue-500"
+                  className="w-5 h-5 accent-primary"
                 />
                 <div className="ml-3 flex-1">
-                  <p className="text-white font-medium">
+                  <p className="text-gray-900 font-medium text-sm">
                     {chapter.chapter_number}. {chapter.chapter_title}
                   </p>
-                  <p className="text-slate-400 text-sm">
+                  <p className="text-gray-400 text-xs">
                     Seite {chapter.start_page}-{chapter.end_page}
                   </p>
                 </div>

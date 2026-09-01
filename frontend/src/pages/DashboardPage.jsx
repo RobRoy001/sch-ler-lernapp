@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Upload } from 'lucide-react';
+import { LogOut, Upload, Settings, ClipboardList, TrendingUp, Flame, Target } from 'lucide-react';
+import Logo from '../components/Logo';
 
 export default function DashboardPage({ user, onLogout }) {
   const navigate = useNavigate();
@@ -10,143 +11,148 @@ export default function DashboardPage({ user, onLogout }) {
     navigate('/');
   };
 
+  const firstName = user?.name?.split(' ')[0] || 'Lerner';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div className="min-h-screen bg-canvas">
       {/* Header */}
-      <div className="bg-slate-800/50 border-b border-slate-700 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">📚</span>
-            <h1 className="text-2xl font-bold text-white">Lernapp</h1>
+      <div className="bg-cream/90 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <Logo size={32} />
+            <h1 className="font-display text-xl font-extrabold text-gray-900">
+              Kapiert<span className="text-primary">?</span>
+            </h1>
           </div>
-          
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-white font-semibold">{user?.name}</p>
-              <p className="text-slate-400 text-sm">{user?.grade_level}</p>
+
+          <div className="flex items-center gap-3">
+            <div className="text-right hidden sm:block">
+              <p className="text-gray-900 font-semibold text-sm">{user?.name}</p>
+              <p className="text-gray-500 text-xs">{user?.grade_level ? `Klasse ${user.grade_level}` : ''}</p>
             </div>
-            
+
+            <button
+              onClick={() => navigate('/settings')}
+              aria-label="Einstellungen"
+              className="p-2 rounded-md text-gray-500 hover:text-primary hover:bg-primary-light/40 transition"
+            >
+              <Settings size={20} />
+            </button>
+
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 px-4 py-2 rounded-lg transition"
+              className="flex items-center gap-2 bg-error-light hover:bg-error/20 text-error-dark px-3 py-2 rounded-md text-sm font-medium transition"
             >
-              <LogOut size={18} />
-              Abmelden
+              <LogOut size={16} />
+              <span className="hidden sm:inline">Abmelden</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-4 py-12">
+      <div className="max-w-6xl mx-auto px-4 py-10">
         {/* Welcome Section */}
-        <div className="mb-12">
-          <h2 className="text-4xl font-bold text-white mb-2">
-            Hallo, {user?.name?.split(' ')[0]}! 👋
+        <div className="mb-10">
+          <h2 className="font-display text-3xl md:text-4xl font-extrabold text-gray-900 mb-1">
+            Hallo, {firstName}! 👋
           </h2>
-          <p className="text-slate-400 text-lg">Du packst das heute!</p>
+          <p className="text-gray-500 text-lg">Du packst das heute!</p>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-          {/* Tests Card */}
-          <div className="bg-gradient-to-br from-blue-600/20 to-blue-600/5 border border-blue-600/30 rounded-2xl p-6 hover:border-blue-500/50 transition">
-            <div className="text-5xl mb-3">📋</div>
-            <h3 className="text-slate-300 text-sm font-semibold mb-1">Tests</h3>
-            <p className="text-4xl font-bold text-blue-400">0</p>
-            <p className="text-slate-500 text-xs mt-2">Noch keine Tests erstellt</p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+          <div className="bg-cream border border-gray-100 rounded-lg p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+            <ClipboardList className="text-primary mb-3" size={28} />
+            <h3 className="text-gray-500 text-sm font-semibold mb-1">Tests</h3>
+            <p className="text-3xl font-display font-bold text-primary">0</p>
+            <p className="text-gray-400 text-xs mt-1">Noch keine Tests erstellt</p>
           </div>
 
-          {/* Success Rate Card */}
-          <div className="bg-gradient-to-br from-green-600/20 to-green-600/5 border border-green-600/30 rounded-2xl p-6 hover:border-green-500/50 transition">
-            <div className="text-5xl mb-3">📈</div>
-            <h3 className="text-slate-300 text-sm font-semibold mb-1">Erfolgsquote</h3>
-            <p className="text-4xl font-bold text-green-400">0%</p>
-            <p className="text-slate-500 text-xs mt-2">Starte mit einem Test!</p>
+          <div className="bg-cream border border-gray-100 rounded-lg p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+            <TrendingUp className="text-success mb-3" size={28} />
+            <h3 className="text-gray-500 text-sm font-semibold mb-1">Erfolgsquote</h3>
+            <p className="text-3xl font-display font-bold text-success">0%</p>
+            <p className="text-gray-400 text-xs mt-1">Starte mit einem Test!</p>
           </div>
 
-          {/* Learning Streak Card */}
-          <div className="bg-gradient-to-br from-amber-600/20 to-amber-600/5 border border-amber-600/30 rounded-2xl p-6 hover:border-amber-500/50 transition">
-            <div className="text-5xl mb-3">🔥</div>
-            <h3 className="text-slate-300 text-sm font-semibold mb-1">Lern-Serie</h3>
-            <p className="text-4xl font-bold text-amber-400">0</p>
-            <p className="text-slate-500 text-xs mt-2">Tage am Stück</p>
+          <div className="bg-cream border border-gray-100 rounded-lg p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+            <Flame className="text-accent mb-3" size={28} />
+            <h3 className="text-gray-500 text-sm font-semibold mb-1">Lern-Serie</h3>
+            <p className="text-3xl font-display font-bold text-accent">0</p>
+            <p className="text-gray-400 text-xs mt-1">Tage am Stück</p>
           </div>
 
-          {/* Topics Card */}
-          <div className="bg-gradient-to-br from-purple-600/20 to-purple-600/5 border border-purple-600/30 rounded-2xl p-6 hover:border-purple-500/50 transition">
-            <div className="text-5xl mb-3">🎯</div>
-            <h3 className="text-slate-300 text-sm font-semibold mb-1">Themen</h3>
-            <p className="text-4xl font-bold text-purple-400">0</p>
-            <p className="text-slate-500 text-xs mt-2">Noch keine Inhalte</p>
+          <div className="bg-cream border border-gray-100 rounded-lg p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+            <Target className="text-gray-700 mb-3" size={28} />
+            <h3 className="text-gray-500 text-sm font-semibold mb-1">Themen</h3>
+            <p className="text-3xl font-display font-bold text-gray-900">0</p>
+            <p className="text-gray-400 text-xs mt-1">Noch keine Inhalte</p>
           </div>
         </div>
 
         {/* Weekly Progress Chart */}
-        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-8 mb-12">
-          <h3 className="text-xl font-semibold text-white mb-6">Wöchentlicher Fortschritt</h3>
-          <div className="flex items-end gap-4 h-48">
-            {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((day, i) => (
+        <div className="bg-cream border border-gray-100 rounded-lg p-6 md:p-8 mb-8 shadow-sm">
+          <h3 className="font-display text-lg font-semibold text-gray-900 mb-6">Wöchentlicher Fortschritt</h3>
+          <div className="flex items-end gap-3 md:gap-4 h-40">
+            {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((day) => (
               <div key={day} className="flex-1 text-center">
-                <div
-                  className="bg-gradient-to-t from-blue-500 to-blue-400 rounded-t-lg mx-auto"
-                  style={{ width: '100%', height: `${Math.random() * 80}px` }}
-                />
-                <p className="text-slate-400 text-sm mt-3">{day}</p>
+                <div className="bg-gray-100 rounded-t-md mx-auto h-4" />
+                <p className="text-gray-400 text-xs mt-2">{day}</p>
               </div>
             ))}
           </div>
-          <p className="text-slate-400 text-sm mt-6 text-center">
+          <p className="text-gray-500 text-sm mt-6 text-center">
             Noch keine Testaktivitäten. Starte jetzt mit neuen Inhalten! 🚀
           </p>
         </div>
 
         {/* Goals Section */}
-        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-8 mb-12">
-          <h3 className="text-xl font-semibold text-white mb-6">🎯 Deine Ziele</h3>
+        <div className="bg-cream border border-gray-100 rounded-lg p-6 md:p-8 mb-8 shadow-sm">
+          <h3 className="font-display text-lg font-semibold text-gray-900 mb-6">🎯 Deine Ziele</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-slate-700/30 rounded-lg p-4 border border-slate-600">
-              <p className="text-slate-300 font-semibold">Diese Woche</p>
-              <p className="text-slate-500 text-sm mt-1">3 Tests absolvieren</p>
-              <div className="mt-3 bg-slate-600 rounded-full h-2">
-                <div className="bg-blue-500 rounded-full h-2" style={{ width: '0%' }} />
+            <div className="bg-white rounded-md p-4 border border-gray-100">
+              <p className="text-gray-800 font-semibold text-sm">Diese Woche</p>
+              <p className="text-gray-400 text-xs mt-1">3 Tests absolvieren</p>
+              <div className="mt-3 bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div className="bg-primary rounded-full h-2 transition-all duration-400" style={{ width: '0%' }} />
               </div>
             </div>
-            <div className="bg-slate-700/30 rounded-lg p-4 border border-slate-600">
-              <p className="text-slate-300 font-semibold">Diesen Monat</p>
-              <p className="text-slate-500 text-sm mt-1">10 Tests absolvieren</p>
-              <div className="mt-3 bg-slate-600 rounded-full h-2">
-                <div className="bg-green-500 rounded-full h-2" style={{ width: '0%' }} />
+            <div className="bg-white rounded-md p-4 border border-gray-100">
+              <p className="text-gray-800 font-semibold text-sm">Diesen Monat</p>
+              <p className="text-gray-400 text-xs mt-1">10 Tests absolvieren</p>
+              <div className="mt-3 bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div className="bg-success rounded-full h-2 transition-all duration-400" style={{ width: '0%' }} />
               </div>
             </div>
           </div>
         </div>
 
         {/* Tips Section */}
-        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-8 mb-12">
-          <h3 className="text-xl font-semibold text-white mb-4">💡 Tipp des Tages</h3>
-          <p className="text-slate-300">
+        <div className="bg-cream border border-gray-100 rounded-lg p-6 md:p-8 mb-8 shadow-sm">
+          <h3 className="font-display text-lg font-semibold text-gray-900 mb-3">💡 Tipp des Tages</h3>
+          <p className="text-gray-600">
             Regelmäßiges Lernen hilft besser! Versuche täglich 15 Minuten zu lernen.
           </p>
         </div>
 
-        {/* Upload Button */}
-        <div className="bg-gradient-to-r from-amber-600/20 to-orange-600/20 border border-amber-500/30 rounded-2xl p-8">
-          <div className="flex items-center justify-between flex-col md:flex-row gap-6">
+        {/* Upload CTA */}
+        <div className="bg-gradient-to-r from-accent to-accent-dark rounded-lg p-6 md:p-8 shadow-md">
+          <div className="flex items-center justify-between flex-col md:flex-row gap-6 text-center md:text-left">
             <div>
-              <h3 className="text-2xl font-semibold text-white mb-2">
+              <h3 className="font-display text-xl md:text-2xl font-semibold text-white mb-1">
                 Starte jetzt mit neuen Inhalten
               </h3>
-              <p className="text-slate-300">
+              <p className="text-white/90 text-sm">
                 Lade Bücher oder Materialien hoch und lasse Tests automatisch generieren
               </p>
             </div>
-            
+
             <button
               onClick={() => navigate('/upload')}
-              className="flex items-center gap-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white px-8 py-4 rounded-xl font-semibold transition whitespace-nowrap"
+              className="flex items-center gap-2 bg-white text-accent-dark px-6 py-3 rounded-md font-semibold shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all whitespace-nowrap"
             >
-              <Upload size={20} />
+              <Upload size={18} />
               Neue Inhalte hochladen
             </button>
           </div>

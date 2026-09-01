@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 export default function ProcessingPage() {
   const navigate = useNavigate();
   const { sourceId } = useParams();
-  
+
   const [status, setStatus] = useState('processing');
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState('Wird verarbeitet...');
@@ -27,7 +27,7 @@ export default function ProcessingPage() {
         }
 
         console.log(`📝 Starte POST /process für Source ${sourceId}`);
-        
+
         const response = await fetch(
           `https://web-production-adfb70.up.railway.app/api/processing/sources/${sourceId}/process`,
           {
@@ -103,153 +103,72 @@ export default function ProcessingPage() {
   }, [sourceId, navigate]);
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '20px',
-      fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif'
-    }}>
-      <div style={{
-        textAlign: 'center',
-        maxWidth: '500px',
-        width: '100%'
-      }}>
+    <div className="min-h-screen bg-canvas flex items-center justify-center px-5">
+      <div className="text-center max-w-md w-full">
         {(status === 'processing' || status === 'pending') && (
           <div>
-            <div style={{
-              marginBottom: '40px',
-              display: 'flex',
-              justifyContent: 'center'
-            }}>
-              <div style={{
-                width: '80px',
-                height: '80px',
-                border: '4px solid #334155',
-                borderTop: '4px solid #3b82f6',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite'
-              }}></div>
+            <div className="mb-10 flex justify-center">
+              <div
+                className="w-20 h-20 rounded-full border-4 border-gray-200 border-t-primary animate-spin"
+                role="status"
+                aria-label="Wird verarbeitet"
+              />
             </div>
 
-            <h1 style={{
-              fontSize: '32px',
-              fontWeight: 'bold',
-              color: 'white',
-              marginBottom: '16px'
-            }}>
-              🔄 Verarbeitung läuft...
+            <h1 className="font-display text-3xl font-bold text-gray-900 mb-4">
+              🔄 Verarbeitung läuft…
             </h1>
 
-            <p style={{
-              fontSize: '16px',
-              color: '#cbd5e1',
-              marginBottom: '32px'
-            }}>
-              Dein Test wird mit KI vorbereitet...
+            <p className="text-gray-500 mb-8">
+              Dein Test wird mit KI vorbereitet…
             </p>
 
-            <div style={{
-              backgroundColor: '#334155',
-              borderRadius: '12px',
-              overflow: 'hidden',
-              height: '24px',
-              marginBottom: '16px',
-              border: '1px solid #475569'
-            }}>
-              <div style={{
-                width: `${progress}%`,
-                height: '100%',
-                backgroundColor: '#3b82f6',
-                transition: 'width 0.3s ease',
-                borderRadius: '12px'
-              }}></div>
+            <div
+              className="bg-gray-200 rounded-lg overflow-hidden h-5 mb-4"
+              role="progressbar"
+              aria-valuenow={progress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                className="h-full bg-gradient-to-r from-primary to-success rounded-lg transition-all duration-400"
+                style={{ width: `${progress}%` }}
+              />
             </div>
 
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              color: '#94a3b8',
-              fontSize: '14px',
-              marginBottom: '24px'
-            }}>
+            <div className="flex justify-between text-gray-500 text-sm mb-6">
               <span>{progress}%</span>
               <span>{message}</span>
             </div>
 
-            <div style={{
-              backgroundColor: '#1e293b',
-              border: '1px solid #475569',
-              borderRadius: '8px',
-              padding: '16px',
-              color: '#cbd5e1'
-            }}>
-              <p style={{ margin: '0', fontSize: '14px' }}>
-                💡 Dies kann einige Minuten dauern - bitte nicht schließen!
-              </p>
+            <div className="bg-primary-light/40 border border-primary/20 rounded-md p-4 text-gray-700 text-sm text-left">
+              💡 Dies kann einige Minuten dauern – bitte nicht schließen!
             </div>
           </div>
         )}
 
         {status === 'completed' && (
           <div>
-            <div style={{ marginBottom: '40px', fontSize: '80px' }}>✅</div>
-            <h1 style={{
-              fontSize: '32px',
-              fontWeight: 'bold',
-              color: 'white',
-              marginBottom: '16px'
-            }}>Fertig! 🎉</h1>
-            <p style={{
-              fontSize: '16px',
-              color: '#cbd5e1',
-              marginBottom: '24px'
-            }}>Dein Test ist bereit - wird geladen...</p>
+            <div className="mb-10 text-8xl animate-bounceIn">✅</div>
+            <h1 className="font-display text-3xl font-bold text-gray-900 mb-4">Fertig! 🎉</h1>
+            <p className="text-gray-500 mb-6">Dein Test ist bereit – wird geladen…</p>
           </div>
         )}
 
         {status === 'error' && (
           <div>
-            <div style={{ marginBottom: '40px', fontSize: '80px' }}>❌</div>
-            <h1 style={{
-              fontSize: '32px',
-              fontWeight: 'bold',
-              color: 'white',
-              marginBottom: '16px'
-            }}>Fehler!</h1>
-            <p style={{
-              fontSize: '16px',
-              color: '#fca5a5',
-              marginBottom: '24px'
-            }}>{message}</p>
+            <div className="mb-10 text-8xl">❌</div>
+            <h1 className="font-display text-3xl font-bold text-gray-900 mb-4">Fehler!</h1>
+            <p className="text-error-dark mb-6">{message}</p>
             <button
               onClick={() => navigate('/upload')}
-              style={{
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                padding: '12px 24px',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                width: '100%'
-              }}
+              className="w-full bg-primary hover:bg-primary-dark text-white font-semibold py-3 rounded-md shadow-md transition"
             >
               Zurück zum Upload
             </button>
           </div>
         )}
       </div>
-
-      <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }

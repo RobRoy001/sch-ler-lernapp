@@ -10,18 +10,18 @@ export default function ConfirmAndProceed({
   const totalItems = filesCount + chaptersCount;
 
   return (
-    <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30 rounded-2xl p-8">
-      <div className="flex items-center justify-between">
+    <div className="bg-gradient-to-r from-primary-light/60 to-accent-light/40 border border-primary/20 rounded-lg p-6 md:p-8">
+      <div className="flex items-center justify-between flex-col md:flex-row gap-4 text-center md:text-left">
         <div>
-          <h3 className="text-lg font-semibold text-white mb-2">
+          <h3 className="font-display text-base font-semibold text-gray-900 mb-1">
             Bereit zum Hochladen
           </h3>
-          <p className="text-slate-300">
+          <p className="text-gray-700 text-sm">
             {filesCount > 0 && `${filesCount} Datei${filesCount !== 1 ? 'en' : ''}`}
             {filesCount > 0 && chaptersCount > 0 && ' + '}
             {chaptersCount > 0 && `${chaptersCount} Kapitel${chaptersCount !== 1 ? '' : ''}`}
           </p>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-gray-500 text-xs mt-1">
             Deine Materialien werden automatisch verarbeitet und Tests generiert
           </p>
         </div>
@@ -29,17 +29,17 @@ export default function ConfirmAndProceed({
         <button
           onClick={onProceed}
           disabled={isProcessing || totalItems === 0}
-          className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 disabled:from-slate-600 disabled:to-slate-600 text-white px-8 py-3 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 bg-primary hover:bg-primary-dark disabled:bg-gray-300 text-white px-6 py-3 rounded-md font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed shadow-md hover:shadow-lg whitespace-nowrap"
         >
           {isProcessing ? (
             <>
-              <Loader size={20} className="animate-spin" />
-              Wird hochgeladen...
+              <Loader size={18} className="animate-spin" />
+              Wird hochgeladen…
             </>
           ) : (
             <>
               Weiter zur Verarbeitung
-              <ArrowRight size={20} />
+              <ArrowRight size={18} />
             </>
           )}
         </button>

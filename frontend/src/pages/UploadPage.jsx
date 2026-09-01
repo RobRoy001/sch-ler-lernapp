@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Upload, BookOpen, Camera } from 'lucide-react';
 import FileDropZone from '../components/FileDropZone';
@@ -39,26 +39,26 @@ export default function UploadPage() {
       for (const uploadedFile of uploadedFiles) {
         const formData = new FormData();
         formData.append('file', uploadedFile.file);
-        
+
         console.log('[Upload] Uploading file:', uploadedFile.file.name);
-        
+
         const uploadRes = await fetch('https://web-production-adfb70.up.railway.app/api/content/upload', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` },
           body: formData
         });
-        
+
         if (!uploadRes.ok) {
           const errorData = await uploadRes.json();
           throw new Error(errorData.error || 'Upload fehlgeschlagen');
         }
-        
+
         const uploadData = await uploadRes.json();
         console.log('[Upload] Upload erfolgreich:', uploadData);
-        
+
         // Create content source
         console.log('[Content Source] Creating for file ID:', uploadData.file.id);
-        
+
         const sourceRes = await fetch('https://web-production-adfb70.up.railway.app/api/content/sources', {
           method: 'POST',
           headers: {
@@ -70,22 +70,22 @@ export default function UploadPage() {
             reference_id: uploadData.file.id
           })
         });
-        
+
         if (!sourceRes.ok) {
           const errorData = await sourceRes.json();
           throw new Error(errorData.error || 'Content Source erstellen fehlgeschlagen');
         }
-        
+
         const sourceData = await sourceRes.json();
         lastSourceId = sourceData.source.id;
         console.log('[Content Source] Created with ID:', lastSourceId);
       }
-      
+
       // 2. If book chapters selected
       if (selectedChapters.length > 0) {
         for (const chapter of selectedChapters) {
           console.log('[Book Chapter] Creating for chapter:', chapter.id);
-          
+
           const sourceRes = await fetch('https://web-production-adfb70.up.railway.app/api/content/sources', {
             method: 'POST',
             headers: {
@@ -98,25 +98,25 @@ export default function UploadPage() {
               reference_book_id: selectedBook.id
             })
           });
-          
+
           if (!sourceRes.ok) {
             const errorData = await sourceRes.json();
             throw new Error(errorData.error || 'Book Chapter Source erstellen fehlgeschlagen');
           }
-          
+
           const sourceData = await sourceRes.json();
           lastSourceId = sourceData.source.id;
         }
       }
-      
+
       if (!lastSourceId) {
         throw new Error('Keine Inhalte hochgeladen');
       }
-      
+
       // 3. Redirect to processing
       console.log('[Redirect] Navigating to processing page with sourceId:', lastSourceId);
       navigate(`/processing/${lastSourceId}`);
-      
+
     } catch (err) {
       console.error('[Error]', err);
       setError(err.message || 'Fehler beim Hochladen');
@@ -126,62 +126,49 @@ export default function UploadPage() {
     }
   };
 
+  const tabs = [
+    { id: 'upload', label: 'Dateien hochladen', icon: Upload },
+    { id: 'book', label: 'Aus Katalog wählen', icon: BookOpen },
+    { id: 'camera', label: 'Mit Kamera', icon: Camera },
+  ];
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-4 py-8">
+    <div className="min-h-screen bg-canvas px-4 py-8">
       {/* Header */}
       <div className="max-w-4xl mx-auto mb-8">
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-2 text-slate-400 hover:text-slate-200 mb-6"
+          className="flex items-center gap-2 text-gray-500 hover:text-gray-800 mb-6 text-sm font-medium"
         >
-          <ArrowLeft size={20} /> Zurück zum Dashboard
+          <ArrowLeft size={18} /> Zurück zum Dashboard
         </button>
-        
-        <h1 className="text-4xl font-bold text-white mb-2">Neue Inhalte hochladen</h1>
-        <p className="text-slate-400">Wähle Bücher aus unserem Katalog oder lade deine eigenen Materialien hoch</p>
+
+        <h1 className="font-display text-3xl md:text-4xl font-extrabold text-gray-900 mb-2">Neue Inhalte hochladen</h1>
+        <p className="text-gray-500">Wähle Bücher aus unserem Katalog oder lade deine eigenen Materialien hoch</p>
       </div>
 
       {/* Tab Navigation */}
       <div className="max-w-4xl mx-auto mb-8">
-        <div className="flex gap-4 border-b border-slate-700">
-          <button
-            onClick={() => setActiveTab('upload')}
-            className={`flex items-center gap-2 px-6 py-3 border-b-2 transition ${
-              activeTab === 'upload'
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Upload size={20} /> Dateien hochladen
-          </button>
-          
-          <button
-            onClick={() => setActiveTab('book')}
-            className={`flex items-center gap-2 px-6 py-3 border-b-2 transition ${
-              activeTab === 'book'
-                ? 'border-green-500 text-green-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <BookOpen size={20} /> Aus Katalog wählen
-          </button>
-          
-          <button
-            onClick={() => setActiveTab('camera')}
-            className={`flex items-center gap-2 px-6 py-3 border-b-2 transition ${
-              activeTab === 'camera'
-                ? 'border-purple-500 text-purple-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Camera size={20} /> Mit Kamera
-          </button>
+        <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
+          {tabs.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`flex items-center gap-2 px-4 md:px-6 py-3 border-b-2 text-sm md:text-base font-medium whitespace-nowrap transition ${
+                activeTab === id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <Icon size={18} /> {label}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Error Message */}
       {error && (
-        <div className="max-w-4xl mx-auto mb-6 bg-red-900/20 border border-red-700 text-red-300 px-4 py-3 rounded-lg">
+        <div role="alert" className="max-w-4xl mx-auto mb-6 bg-error-light border border-error/30 text-error-dark px-4 py-3 rounded-md text-sm">
           {error}
         </div>
       )}
@@ -196,7 +183,7 @@ export default function UploadPage() {
             )}
           </>
         )}
-        
+
         {activeTab === 'book' && (
           <BookCatalogSelector
             selectedBook={selectedBook}
@@ -205,10 +192,10 @@ export default function UploadPage() {
             onChaptersSelect={setSelectedChapters}
           />
         )}
-        
+
         {activeTab === 'camera' && (
-          <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-8 text-center text-slate-400">
-            <Camera size={48} className="mx-auto mb-4 opacity-50" />
+          <div className="bg-cream border border-gray-100 rounded-lg p-8 text-center text-gray-400">
+            <Camera size={48} className="mx-auto mb-4 opacity-40" />
             <p>Kamera-Feature kommt bald! 🚀</p>
           </div>
         )}
