@@ -14,14 +14,7 @@ const authCheck = (req, res, next) => {
 
 // Try to get database connection, but gracefully fall back to mock mode
 let db = null;
-let usingMockMode = false;
-
-try {
-} catch (error) {
-  console.warn('⚠️  Database not available - Running in MOCK MODE');
-  console.warn('Error:', error.message);
-  usingMockMode = true;
-}
+let usingMockMode = true; // Keine echte Datenbank konfiguriert - läuft im Mock-Modus
 
 // ✅ Mock data storage for fallback mode
 const mockSubmissions = new Map();
