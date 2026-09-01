@@ -71,7 +71,7 @@ function App() {
         {!isAuthenticated ? (
           <>
             <Route path="/" element={<LoginPage onLoginSuccess={handleLoginSuccess} />} />
-            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/register" element={<RegisterPage onLoginSuccess={handleLoginSuccess} />} />
             <Route path="*" element={<Navigate to="/" />} />
           </>
         ) : (
