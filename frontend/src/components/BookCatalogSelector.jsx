@@ -40,7 +40,7 @@ export default function BookCatalogSelector({
     onChaptersSelect([]);
 
     try {
-      const res = await fetch(`http://localhost:5000/api/content/books/${book.id}/chapters`);
+      const res = await fetch(`https://web-production-adfb70.up.railway.app/api/content/books/${book.id}/chapters`);
       if (!res.ok) throw new Error('Kapitel konnten nicht geladen werden');
       const data = await res.json();
       setChapters(data.chapters);
