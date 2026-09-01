@@ -29,7 +29,7 @@ export default function ProcessingPage() {
         console.log(`📝 Starte POST /process für Source ${sourceId}`);
         
         const response = await fetch(
-          `http://localhost:5000/api/processing/sources/${sourceId}/process`,
+          `https://web-production-adfb70.up.railway.app/api/processing/sources/${sourceId}/process`,
           {
             method: 'POST',
             headers: {
@@ -60,7 +60,7 @@ export default function ProcessingPage() {
         if (!token) return;
 
         const response = await fetch(
-          `http://localhost:5000/api/processing/sources/${sourceId}/status`,
+          `https://web-production-adfb70.up.railway.app/api/processing/sources/${sourceId}/status`,
           {
             method: 'GET',
             headers: {

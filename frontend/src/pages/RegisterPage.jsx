@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'https://web-production-adfb70.up.railway.app/api';
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({

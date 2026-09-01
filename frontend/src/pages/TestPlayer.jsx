@@ -97,7 +97,7 @@ export default function TestPlayer() {
         }
 
         const response = await fetch(
-          `http://localhost:5000/api/processing/sources/${sourceId}/tests`,
+          `https://web-production-adfb70.up.railway.app/api/processing/sources/${sourceId}/tests`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -196,7 +196,7 @@ export default function TestPlayer() {
       console.log('Submitting answers:', answerArray);
 
       const response = await fetch(
-        `http://localhost:5000/api/processing/tests/${test.id}/submit`,
+        `https://web-production-adfb70.up.railway.app/api/processing/tests/${test.id}/submit`,
         {
           method: 'POST',
           headers: {

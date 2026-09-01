@@ -42,7 +42,7 @@ export default function UploadPage() {
         
         console.log('[Upload] Uploading file:', uploadedFile.file.name);
         
-        const uploadRes = await fetch('http://localhost:5000/api/content/upload', {
+        const uploadRes = await fetch('https://web-production-adfb70.up.railway.app/api/content/upload', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` },
           body: formData
@@ -59,7 +59,7 @@ export default function UploadPage() {
         // Create content source
         console.log('[Content Source] Creating for file ID:', uploadData.file.id);
         
-        const sourceRes = await fetch('http://localhost:5000/api/content/sources', {
+        const sourceRes = await fetch('https://web-production-adfb70.up.railway.app/api/content/sources', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -86,7 +86,7 @@ export default function UploadPage() {
         for (const chapter of selectedChapters) {
           console.log('[Book Chapter] Creating for chapter:', chapter.id);
           
-          const sourceRes = await fetch('http://localhost:5000/api/content/sources', {
+          const sourceRes = await fetch('https://web-production-adfb70.up.railway.app/api/content/sources', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
