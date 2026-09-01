@@ -18,7 +18,7 @@ export default function BookCatalogSelector({
     const fetchBooks = async () => {
       try {
         const res = await fetch(
-          `http://localhost:5000/api/content/books?grade_level=${gradeFilter}&subject=${subjectFilter}`
+          `https://web-production-adfb70.up.railway.app/api/content/books?grade_level=${gradeFilter}&subject=${subjectFilter}`
         );
         if (!res.ok) throw new Error('Bücher konnten nicht geladen werden');
         const data = await res.json();
