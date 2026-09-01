@@ -25,7 +25,7 @@ export default function Dashboard() {
         }
 
         const response = await fetch(
-          'http://localhost:5000/api/processing/submissions',
+          'https://web-production-adfb70.up.railway.app/api/processing/submissions',
           {
             headers: { Authorization: `Bearer ${token}` }
           }
