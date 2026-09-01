@@ -18,7 +18,7 @@ export default function TestPlayer() {
       try {
         const token = localStorage.getItem('token');
         const response = await fetch(
-          `http://localhost:5000/api/processing/tests/${testId}`,
+          `https://web-production-adfb70.up.railway.app/api/processing/tests/${testId}`,
           {
             headers: { Authorization: `Bearer ${token}` }
           }
@@ -147,7 +147,7 @@ export default function TestPlayer() {
 
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `http://localhost:5000/api/processing/tests/${testId}/submit`,
+        `https://web-production-adfb70.up.railway.app/api/processing/tests/${testId}/submit`,
         {
           method: 'POST',
           headers: {
