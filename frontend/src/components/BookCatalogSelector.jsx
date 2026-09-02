@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Loader } from 'lucide-react';
+import { API_BASE_URL } from '../config/api';
 
 export default function BookCatalogSelector({
   selectedBook,
@@ -18,7 +19,7 @@ export default function BookCatalogSelector({
     const fetchBooks = async () => {
       try {
         const res = await fetch(
-          `https://web-production-adfb70.up.railway.app/api/content/books?grade_level=${gradeFilter}&subject=${subjectFilter}`
+          `${API_BASE_URL}/content/books?grade_level=${gradeFilter}&subject=${subjectFilter}`
         );
         if (!res.ok) throw new Error('Bücher konnten nicht geladen werden');
         const data = await res.json();
@@ -40,7 +41,7 @@ export default function BookCatalogSelector({
     onChaptersSelect([]);
 
     try {
-      const res = await fetch(`https://web-production-adfb70.up.railway.app/api/content/books/${book.id}/chapters`);
+      const res = await fetch(`${API_BASE_URL}/content/books/${book.id}/chapters`);
       if (!res.ok) throw new Error('Kapitel konnten nicht geladen werden');
       const data = await res.json();
       setChapters(data.chapters);

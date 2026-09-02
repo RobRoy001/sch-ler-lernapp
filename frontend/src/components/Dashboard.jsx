@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import '../styles/Dashboard.css';
+import { API_BASE_URL } from '../config/api';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -25,7 +26,7 @@ export default function Dashboard() {
         }
 
         const response = await fetch(
-          'https://web-production-adfb70.up.railway.app/api/processing/submissions',
+          `${API_BASE_URL}/processing/submissions`,
           {
             headers: { Authorization: `Bearer ${token}` }
           }

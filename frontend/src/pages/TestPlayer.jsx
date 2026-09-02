@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config/api';
 
 // MultipleChoice Component
 function MultipleChoiceQuestion({ question, answer, onAnswer }) {
@@ -85,7 +86,7 @@ export default function TestPlayer() {
         }
 
         const response = await fetch(
-          `https://web-production-adfb70.up.railway.app/api/processing/sources/${sourceId}/tests`,
+          `${API_BASE_URL}/processing/sources/${sourceId}/tests`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -157,6 +158,13 @@ export default function TestPlayer() {
     }
   };
 
+  const getMotivationMessage = (acc) => {
+    if (acc >= 90) return '🏆 Outstanding! Du bist ein Meister!';
+    if (acc >= 70) return '🌟 Sehr gut! Weiter so!';
+    if (acc >= 60) return '💪 Gute Anstrengung! Nächstes Mal wird\'s besser!';
+    return '📚 Weiter üben! Du schaffst das!';
+  };
+
   const submitTest = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -166,17 +174,30 @@ export default function TestPlayer() {
         is_correct: checkAnswer(q, answers[q.id])
       }));
 
-      console.log('Submitting answers:', answerArray);
+      // Backend verlangt correctCount/totalQuestions/accuracy als Pflichtfelder
+      // (siehe backend/src/routes/processing.js) - vorher wurden nur die
+      // Antworten geschickt, wodurch jeder Submit mit HTTP 400 fehlschlug.
+      const correctCount = answerArray.filter(a => a.is_correct).length;
+      const totalQuestions = questions.length;
+      const accuracy = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
+
+      console.log('Submitting answers:', answerArray, { correctCount, totalQuestions, accuracy });
 
       const response = await fetch(
-        `https://web-production-adfb70.up.railway.app/api/processing/tests/${test.id}/submit`,
+        `${API_BASE_URL}/processing/tests/${test.id}/submit`,
         {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ answers: answerArray })
+          body: JSON.stringify({
+            answers: answerArray,
+            correctCount,
+            totalQuestions,
+            accuracy,
+            timeTaken: 0
+          })
         }
       );
 
@@ -187,12 +208,16 @@ export default function TestPlayer() {
       const result = await response.json();
       console.log('Test Result:', result);
 
+      // Backend liefert die Werte unter result.submission.* zurück,
+      // nicht result.score/total_points/accuracy_percentage wie vorher angenommen.
+      const sub = result.submission || {};
+
       navigate(`/results/${test.id}`, {
         state: {
-          score: result.score,
-          totalPoints: result.total_points,
-          accuracy: result.accuracy_percentage,
-          message: result.message
+          score: sub.correctCount ?? correctCount,
+          totalPoints: sub.totalQuestions ?? totalQuestions,
+          accuracy: sub.accuracy ?? accuracy,
+          message: getMotivationMessage(sub.accuracy ?? accuracy)
         }
       });
     } catch (err) {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { API_BASE_URL } from '../config/api';
 
 export default function ProcessingPage() {
   const navigate = useNavigate();
@@ -29,7 +30,7 @@ export default function ProcessingPage() {
         console.log(`📝 Starte POST /process für Source ${sourceId}`);
 
         const response = await fetch(
-          `https://web-production-adfb70.up.railway.app/api/processing/sources/${sourceId}/process`,
+          `${API_BASE_URL}/processing/sources/${sourceId}/process`,
           {
             method: 'POST',
             headers: {
@@ -60,7 +61,7 @@ export default function ProcessingPage() {
         if (!token) return;
 
         const response = await fetch(
-          `https://web-production-adfb70.up.railway.app/api/processing/sources/${sourceId}/status`,
+          `${API_BASE_URL}/processing/sources/${sourceId}/status`,
           {
             method: 'GET',
             headers: {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import '../styles/TestPlayer.css';
+import { API_BASE_URL } from '../config/api';
 
 export default function TestPlayer() {
   const { testId } = useParams();
@@ -18,7 +19,7 @@ export default function TestPlayer() {
       try {
         const token = localStorage.getItem('token');
         const response = await fetch(
-          `https://web-production-adfb70.up.railway.app/api/processing/tests/${testId}`,
+          `${API_BASE_URL}/processing/tests/${testId}`,
           {
             headers: { Authorization: `Bearer ${token}` }
           }
@@ -147,7 +148,7 @@ export default function TestPlayer() {
 
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `https://web-production-adfb70.up.railway.app/api/processing/tests/${testId}/submit`,
+        `${API_BASE_URL}/processing/tests/${testId}/submit`,
         {
           method: 'POST',
           headers: {

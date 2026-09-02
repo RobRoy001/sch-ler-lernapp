@@ -1,8 +1,27 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { LogoWithText } from '../components/Logo';
+import { API_BASE_URL } from '../config/api';
 
-const API_URL = 'https://web-production-adfb70.up.railway.app/api';
+const API_URL = API_BASE_URL;
+
+// Gleiche Berechnung wie im Backend (utils/age.js) - hier nur, um dem
+// Nutzer sofort beim Ausfüllen das Eltern-Email-Feld ein-/auszublenden.
+// Die eigentliche, verbindliche Prüfung passiert immer serverseitig.
+function calculateAge(dateOfBirth) {
+  if (!dateOfBirth) return null;
+  const birthDate = new Date(dateOfBirth);
+  if (isNaN(birthDate.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+}
+
+const PARENT_CONSENT_AGE = 16;
 
 export default function RegisterPage({ onLoginSuccess }) {
   const [formData, setFormData] = useState({
@@ -10,11 +29,20 @@ export default function RegisterPage({ onLoginSuccess }) {
     grade_level: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    date_of_birth: '',
+    parent_email: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Sicherheitsaudit Kritisch #5 (Art. 8 DSGVO): wenn der Server meldet,
+  // dass eine Elternzustimmung nötig ist, wird statt der App direkt ein
+  // Hinweis angezeigt - es gibt in diesem Fall (noch) kein Token/Login.
+  const [pendingConsent, setPendingConsent] = useState(false);
   const navigate = useNavigate();
+
+  const age = calculateAge(formData.date_of_birth);
+  const needsParentConsent = age !== null && age < PARENT_CONSENT_AGE;
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -26,13 +54,18 @@ export default function RegisterPage({ onLoginSuccess }) {
     e.preventDefault();
     setError('');
 
-    if (!formData.name || !formData.grade_level || !formData.email || !formData.password) {
+    if (!formData.name || !formData.grade_level || !formData.email || !formData.password || !formData.date_of_birth) {
       setError('Alle Felder ausfüllen.');
       return;
     }
 
     if (formData.password !== formData.confirmPassword) {
       setError('Passwörter stimmen nicht überein.');
+      return;
+    }
+
+    if (needsParentConsent && !formData.parent_email) {
+      setError('Für Nutzer unter 16 Jahren wird die Email eines Erziehungsberechtigten benötigt.');
       return;
     }
 
@@ -45,12 +78,19 @@ export default function RegisterPage({ onLoginSuccess }) {
           name: formData.name,
           grade_level: formData.grade_level,
           email: formData.email,
-          password: formData.password
+          password: formData.password,
+          date_of_birth: formData.date_of_birth,
+          parent_email: needsParentConsent ? formData.parent_email : undefined
         })
       });
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Registrierung fehlgeschlagen');
+
+      if (data.pendingParentConsent) {
+        setPendingConsent(true);
+        return;
+      }
 
       localStorage.setItem('token', data.token);
 
@@ -65,6 +105,37 @@ export default function RegisterPage({ onLoginSuccess }) {
       setLoading(false);
     }
   };
+
+  if (pendingConsent) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-canvas via-primary-light/20 to-canvas flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-md animate-fadeInUp">
+          <div className="flex justify-center mb-8">
+            <LogoWithText size={48} textClassName="text-3xl" />
+          </div>
+          <div className="bg-cream border border-gray-100 rounded-lg p-8 shadow-lg text-center">
+            <h2 className="font-display text-2xl font-bold text-gray-900 mb-3">
+              Fast geschafft! 📧
+            </h2>
+            <p className="text-gray-600 mb-4">
+              Da du unter {PARENT_CONSENT_AGE} Jahre alt bist, braucht Kapiert? noch die Zustimmung
+              eines Erziehungsberechtigten. Wir haben eine Email mit einem Bestätigungslink an{' '}
+              <strong>{formData.parent_email}</strong> geschickt.
+            </p>
+            <p className="text-gray-500 text-sm mb-6">
+              Sobald dort bestätigt wurde, kannst du dich hier ganz normal einloggen.
+            </p>
+            <Link
+              to="/"
+              className="inline-block w-full h-11 leading-[2.75rem] bg-primary hover:bg-primary-dark text-white font-semibold rounded-md shadow-md transition-all"
+            >
+              Zurück zum Login
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-canvas via-primary-light/20 to-canvas flex items-center justify-center px-4 py-8">
@@ -106,6 +177,45 @@ export default function RegisterPage({ onLoginSuccess }) {
                 <option key={g} value={g}>Klasse {g}</option>
               ))}
             </select>
+
+            <div>
+              <label htmlFor="date_of_birth" className="block text-gray-600 text-sm mb-1.5">
+                Geburtsdatum
+              </label>
+              <input
+                id="date_of_birth"
+                type="date"
+                name="date_of_birth"
+                autoComplete="bday"
+                value={formData.date_of_birth}
+                onChange={handleChange}
+                max={new Date().toISOString().slice(0, 10)}
+                className="w-full h-11 bg-white text-gray-900 px-4 rounded-md border border-gray-300 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition"
+              />
+            </div>
+
+            {needsParentConsent && (
+              <div>
+                <label htmlFor="parent_email" className="block text-gray-600 text-sm mb-1.5">
+                  Email eines Erziehungsberechtigten
+                </label>
+                <input
+                  id="parent_email"
+                  type="email"
+                  name="parent_email"
+                  placeholder="eltern@beispiel.de"
+                  autoComplete="off"
+                  value={formData.parent_email}
+                  onChange={handleChange}
+                  className="w-full h-11 bg-white text-gray-900 placeholder-gray-400 px-4 rounded-md border border-gray-300 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition"
+                />
+                <p className="text-gray-400 text-xs mt-1.5">
+                  Unter {PARENT_CONSENT_AGE} Jahren braucht Kapiert? laut DSGVO die Zustimmung
+                  eines Erziehungsberechtigten, bevor das Konto genutzt werden kann.
+                </p>
+              </div>
+            )}
+
             <input
               type="email"
               name="email"

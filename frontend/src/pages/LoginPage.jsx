@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { LogoWithText } from '../components/Logo';
+import { API_BASE_URL } from '../config/api';
 
-const API_URL = 'https://web-production-adfb70.up.railway.app/api';
+const API_URL = API_BASE_URL;
 
 export default function LoginPage({ onLoginSuccess }) {
   const [email, setEmail] = useState('');

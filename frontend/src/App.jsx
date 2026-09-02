@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import ParentConsentPage from './pages/ParentConsentPage';
 import DashboardPage from './pages/DashboardPage';
 import UploadPage from './pages/UploadPage';
 import ProcessingPage from './pages/ProcessingPage';
@@ -9,6 +10,7 @@ import TestPlayer from './pages/TestPlayer';
 import ResultsPage from './pages/ResultsPage';
 import SettingsPage from './pages/SettingsPage';
 import Logo from './components/Logo';
+import { API_BASE_URL } from './config/api';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -23,7 +25,7 @@ function App() {
 
   const verifyToken = async (token) => {
     try {
-      const response = await fetch('https://web-production-adfb70.up.railway.app/api/auth/profile', {
+      const response = await fetch(`${API_BASE_URL}/auth/profile`, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
       });
@@ -76,6 +78,10 @@ function App() {
           <>
             <Route path="/" element={<LoginPage onLoginSuccess={handleLoginSuccess} />} />
             <Route path="/register" element={<RegisterPage onLoginSuccess={handleLoginSuccess} />} />
+            {/* Ziel des Links aus der Eltern-Email (Sicherheitsaudit Kritisch #5) -
+                muss auch ohne Login erreichbar sein, da der Elternteil selbst
+                kein Konto in der App hat. */}
+            <Route path="/parent-consent" element={<ParentConsentPage />} />
             <Route path="*" element={<Navigate to="/" />} />
           </>
         ) : (
@@ -86,6 +92,9 @@ function App() {
             <Route path="/test/:sourceId" element={<TestPlayer />} />
             <Route path="/results/:submissionId" element={<ResultsPage />} />
             <Route path="/settings" element={<SettingsPage user={user} onLogout={handleLogout} />} />
+            {/* Auch erreichbar, falls z.B. ein Elternteil den Link auf einem
+                Gerät öffnet, auf dem gerade ein anderes Konto eingeloggt ist. */}
+            <Route path="/parent-consent" element={<ParentConsentPage />} />
             <Route path="*" element={<Navigate to="/" />} />
           </>
         )}
