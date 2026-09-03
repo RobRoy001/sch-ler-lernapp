@@ -177,6 +177,16 @@ async function deleteParent(parentId) {
 }
 
 async function deleteTeacher(teacherId) {
+  // class_sources.teacher_id verweist zwar ebenfalls auf teachers(id), aber
+  // OHNE ON DELETE CASCADE (anders als classes.teacher_id in
+  // database/migrations.js) - ein direktes DELETE FROM teachers schlägt
+  // deshalb mit einer Fremdschlüssel-Verletzung fehl, sobald die Lehrkraft
+  // mindestens eine Klassenarbeit angelegt hat. Gefunden beim ersten echten
+  // Admin-Cleanup (2026-09-03). Deshalb hier explizit vorher aufräumen,
+  // statt sich auf die (unvollständige) Kaskade zu verlassen - relevant
+  // nicht nur fürs Testkonten-Löschen, sondern auch für die künftige
+  // GDPR-Löschfunktion für echte Lehrer-Konten (Phase 2).
+  await query('DELETE FROM class_sources WHERE teacher_id = $1', [teacherId]);
   const result = await query('DELETE FROM teachers WHERE id = $1 RETURNING id', [teacherId]);
   return result.rows[0];
 }
