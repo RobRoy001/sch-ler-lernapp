@@ -129,7 +129,13 @@ router.post('/sources/:sourceId/process', authCheck, asyncHandler(async (req, re
     const sourceId = parseInt(req.params.sourceId, 10);
     const source = await findSourceById(sourceId);
 
-    if (!source) {
+    // ✅ Audit 2026-09-03, Befund kritisch: fehlender Ownership-Check hier
+    // erlaubte es jedem eingeloggten Nutzer, per simplem ID-Hochzählen
+    // Verarbeitung für fremde Sources anzustoßen und (in den zwei Routen
+    // unten) fremde Uploads/Testinhalte einzusehen - exakt das Muster, das
+    // in content.js (GET /sources/:id) schon richtig gemacht wurde, hier
+    // beim Bau der Pipeline aber vergessen wurde.
+    if (!source || source.user_id !== req.user.id) {
       return res.status(404).json({ error: 'Source nicht gefunden' });
     }
 
@@ -151,7 +157,8 @@ router.get('/sources/:sourceId/status', authCheck, asyncHandler(async (req, res)
     const sourceId = parseInt(req.params.sourceId, 10);
     const source = await findSourceById(sourceId);
 
-    if (!source) {
+    // ✅ Audit 2026-09-03: Ownership-Check, siehe Kommentar bei /process oben.
+    if (!source || source.user_id !== req.user.id) {
       return res.status(404).json({ error: 'Source nicht gefunden' });
     }
 
@@ -172,7 +179,12 @@ router.get('/sources/:sourceId/tests', authCheck, asyncHandler(async (req, res) 
     const sourceId = parseInt(req.params.sourceId, 10);
     const source = await findSourceById(sourceId);
 
-    if (!source || !source.test) {
+    // ✅ Audit 2026-09-03: Ownership-Check, siehe Kommentar bei /process oben.
+    if (!source || source.user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Source nicht gefunden' });
+    }
+
+    if (!source.test) {
       return res.status(404).json({ error: 'Test noch nicht bereit' });
     }
 

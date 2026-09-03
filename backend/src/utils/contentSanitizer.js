@@ -4,20 +4,45 @@
 // VOR jedem Aufruf an questionGenerator.js — nur der bereinigte Text darf
 // das Backend in Richtung OpenAI verlassen.
 //
-// Bewusster Trade-off: die Muster hier sind absichtlich eher zu aggressiv
-// als zu vorsichtig (siehe Kommentare pro Regel). Ein paar Fehltreffer bei
-// harmlosen Wörtern (z.B. Eigennamen im Lernstoff wie "Karl Marx" in einer
-// Geschichts-Klassenarbeit) sind ein akzeptabler Kollateralschaden, ein
-// durchgerutschter Schülername ist es nicht. Vor dem echten Livegang sollte
-// das an echten, anonymisierten Beispiel-Klassenarbeiten gegengeprüft werden
-// (siehe Konzept-Dokument Abschnitt 7, Punkt "keine Rechtsberatung").
+// ✅ Audit 2026-09-03, Sanitizer-Überarbeitung: die ursprüngliche Namens-
+// Regel ("zwei großgeschriebene Wörter hintereinander") war bewusst zu
+// aggressiv gedacht — traf beim Live-Test mit echtem Geschichtstext aber
+// nicht nur Namen, sondern reihenweise ganz normale deutsche Nomen-/
+// Adjektiv-Phrasen ("Französische Revolution", "Zweiten Weltkrieg" usw.),
+// weil im Deutschen Substantive grundsätzlich großgeschrieben werden — das
+// Muster war strukturell nicht in der Lage, zwischen einem Namen und
+// normalem Lernstoff zu unterscheiden. Statt einer Lernstoff-weiten Regel
+// zielt die Namens-Erkennung jetzt gezielt auf die Stellen, an denen ein
+// Schülername in einer hochgeladenen Klassenarbeit tatsächlich auftaucht:
+// das Kopf-/Namensfeld des Arbeitsblatts ("Name: ...", "Klasse: ...") und
+// typische Selbstnennungs-Formulierungen ("Ich heiße ...", "Von: ..."). Der
+// Fließtext der eigentlichen Aufgabe wird dadurch nicht mehr angetastet.
+// Bewusster Rest-Trade-off: ein Name, der frei im Fließtext auftaucht, ohne
+// so ein Signalwort davor (z.B. in einem Aufsatz "Mein Bruder Peter kam..."),
+// wird nicht mehr erkannt. Das ist ein Kompromiss, kein perfekter Schutz —
+// vor dem echten Livegang sollte trotzdem an echten, anonymisierten
+// Beispiel-Klassenarbeiten gegengeprüft werden (siehe Konzept-Dokument
+// Abschnitt 7, Punkt "keine Rechtsberatung").
 
-// Zwei Großbuchstaben-Wörter hintereinander ("Vorname Nachname"). Trifft
-// bewusst auch echte Eigennamen im Lernstoff (z.B. "Karl Marx", "Berlin
-// Mitte") — siehe Trade-off oben. Ein Wort MUSS mit Kleinbuchstaben weiter-
-// gehen, damit reine Abkürzungsketten (z.B. "USA UdSSR") nicht getroffen
-// werden, die im Unterrichtsstoff selbst wichtig sein können.
-const NAME_PATTERN = /\b[A-ZÄÖÜ][a-zäöüß]+\s+[A-ZÄÖÜ][a-zäöüß]+\b/g;
+// Label-Felder, wie sie auf praktisch jedem Arbeitsblatt-Kopf stehen. Der
+// Doppelpunkt/Bindestrich ist Pflicht (kein reines Leerzeichen), damit z.B.
+// "Klasse 7b" (Zahl folgt, kein Name) oder zufälliger Fließtext mit dem
+// Wort "Klasse" nicht mit-getroffen wird.
+const NAME_LABEL_PATTERN =
+  /\b(Name|Vorname|Nachname|Sch(?:ü|ue)ler(?:in)?|Klasse|Lehrer(?:in)?)\s*[:\-]\s*([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)/g;
+
+// Typische Selbstnennungs-/Signatur-Formulierungen.
+const NAME_SELF_INTRO_PATTERN =
+  /\b(Ich hei(?:ß|ss)e|Mein Name ist|Von)\s*:?\s+([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)/g;
+
+// Häufiges Kopfzeilen-Format "Klasse: 7b - Max Mustermann" (Name nach
+// Bindestrich am Zeilenende) — deckt den Fall ab, in dem NAME_LABEL_PATTERN
+// oben nicht direkt greift, weil zwischen Label und Name noch ein Klassen-
+// code steht. Bewusst ans Zeilenende gebunden ($, mit /m), damit normale
+// Sätze, die zufällig mit "- Wort Wort" mitten im Fließtext weitergehen,
+// nicht getroffen werden.
+const NAME_TRAILING_PATTERN =
+  /[-–—]\s*([A-ZÄÖÜ][a-zäöüß]+\s+[A-ZÄÖÜ][a-zäöüß]+)\s*$/gm;
 
 const EMAIL_PATTERN = /[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}/g;
 
@@ -50,7 +75,9 @@ function sanitizeForOpenAI(rawText) {
   text = text.replace(GRADE_PATTERN, '[NOTE]');
   // Namen zuletzt, damit z.B. "Matrikel-Nr. 12" nicht vorher schon von der
   // Namens-Regel verändert wurde (Regel-Reihenfolge ist hier relevant).
-  text = text.replace(NAME_PATTERN, '[NAME]');
+  text = text.replace(NAME_LABEL_PATTERN, (_match, label) => `${label}: [NAME]`);
+  text = text.replace(NAME_SELF_INTRO_PATTERN, (_match, intro) => `${intro} [NAME]`);
+  text = text.replace(NAME_TRAILING_PATTERN, '- [NAME]');
 
   return text;
 }
