@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { LogoWithText } from '../../components/Logo';
 import { API_BASE_URL } from '../../config/api';
 
@@ -10,8 +10,15 @@ import { API_BASE_URL } from '../../config/api';
 // hier eine echte Selbst-Registrierung, da Lehrkräfte keine Kinder sind und
 // kein Consent-Flow nötig ist - deshalb ein Umschalter zwischen Login und
 // Registrierung auf derselben Seite (gleiches Muster wie RegisterPage.jsx).
+//
+// ?mode=register (nachträglich ergänzt, 2026-09-03): die neue Rollen-Auswahl
+// auf RegisterPage.jsx verlinkt hierher mit diesem Query-Parameter, damit
+// Lehrkräfte direkt im Registrierungs-Modus landen statt erst noch selbst
+// auf "Jetzt registrieren" klicken zu müssen.
 export default function LehrerLoginPage() {
-  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [searchParams] = useSearchParams();
+  const initialMode = searchParams.get('mode') === 'register' ? 'register' : 'login';
+  const [mode, setMode] = useState(initialMode); // 'login' | 'register'
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);

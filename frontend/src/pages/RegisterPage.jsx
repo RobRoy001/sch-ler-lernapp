@@ -1,12 +1,93 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { GraduationCap, Users, UserRound } from 'lucide-react';
 import { LogoWithText } from '../components/Logo';
 import { API_BASE_URL } from '../config/api';
 import { calculateAge } from '../utils/age';
 
 const API_URL = API_BASE_URL;
 
+// Rollen-Auswahl (nachträglich ergänzt, 2026-09-03): vorher landete jede
+// Person beim Klick auf "Jetzt registrieren" direkt im Schüler-Formular -
+// Lehrkräfte und Eltern mussten von sich aus wissen, dass es dafür eigene
+// Seiten (/lehrer/login, /eltern/login) gibt. Jetzt fragt diese Seite zuerst
+// die Rolle ab:
+//   - Schüler:in -> Formular unten auf DERSELBEN Seite (kein Routen-Wechsel,
+//     damit der bestehende Link von LoginPage.jsx auf /register weiter
+//     funktioniert)
+//   - Lehrkraft -> /lehrer/login?mode=register (dort bereits eine echte
+//     Selbst-Registrierung vorhanden, siehe LehrerLoginPage.jsx)
+//   - Elternteil -> /eltern/login (dort steht bereits der Hinweis "Du
+//     erhältst dein Konto über den Zustimmungs-Link deines Kindes" - es gibt
+//     bewusst KEINE eigenständige Eltern-Registrierung, siehe
+//     ElternLoginPage.jsx-Kommentar)
+function RoleSelect({ onSelectStudent }) {
+  const navigate = useNavigate();
+
+  const roles = [
+    {
+      key: 'schueler',
+      icon: GraduationCap,
+      title: 'Ich bin Schüler:in',
+      description: 'Klassenarbeiten üben, Fortschritt sehen',
+      onClick: onSelectStudent
+    },
+    {
+      key: 'lehrer',
+      icon: Users,
+      title: 'Ich bin Lehrkraft',
+      description: 'Klassen anlegen, Klassenarbeiten hochladen',
+      onClick: () => navigate('/lehrer/login?mode=register')
+    },
+    {
+      key: 'eltern',
+      icon: UserRound,
+      title: 'Ich bin Elternteil',
+      description: 'Fortschritt meines Kindes einsehen',
+      onClick: () => navigate('/eltern/login')
+    }
+  ];
+
+  return (
+    <div className="bg-cream border border-gray-100 rounded-lg p-8 shadow-lg">
+      <h2 className="font-display text-2xl font-bold text-gray-900 mb-1 text-center">
+        Konto erstellen
+      </h2>
+      <p className="text-gray-500 text-center text-sm mb-6">
+        Wer bist du?
+      </p>
+
+      <div className="space-y-3">
+        {roles.map(({ key, icon: Icon, title, description, onClick }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={onClick}
+            className="w-full flex items-center gap-4 text-left border border-gray-200 rounded-md p-4 hover:border-primary hover:bg-primary/5 transition"
+          >
+            <span className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary shrink-0">
+              <Icon size={20} />
+            </span>
+            <span>
+              <span className="block font-semibold text-gray-900">{title}</span>
+              <span className="block text-gray-500 text-sm">{description}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <p className="text-center text-gray-500 text-sm mt-6">
+        Bereits registriert?{' '}
+        <Link to="/" className="text-primary hover:underline font-semibold">
+          Hier anmelden
+        </Link>
+      </p>
+    </div>
+  );
+}
+
 export default function RegisterPage({ onLoginSuccess }) {
+  const [step, setStep] = useState('role'); // 'role' | 'schueler'
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -114,6 +195,19 @@ export default function RegisterPage({ onLoginSuccess }) {
   const age = formData.date_of_birth ? calculateAge(formData.date_of_birth) : null;
   const needsParentEmail = age !== null && age < 16;
 
+  if (step === 'role') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-canvas via-primary-light/20 to-canvas flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-md animate-fadeInUp">
+          <div className="flex justify-center mb-8">
+            <LogoWithText size={48} textClassName="text-3xl" />
+          </div>
+          <RoleSelect onSelectStudent={() => setStep('schueler')} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-canvas via-primary-light/20 to-canvas flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md animate-fadeInUp">
@@ -122,6 +216,13 @@ export default function RegisterPage({ onLoginSuccess }) {
         </div>
 
         <div className="bg-cream border border-gray-100 rounded-lg p-8 shadow-lg">
+          <button
+            type="button"
+            onClick={() => setStep('role')}
+            className="text-gray-400 hover:text-gray-600 text-xs font-medium mb-4"
+          >
+            ← Andere Rolle wählen
+          </button>
           <h2 className="font-display text-2xl font-bold text-gray-900 mb-1 text-center">
             Konto erstellen
           </h2>
