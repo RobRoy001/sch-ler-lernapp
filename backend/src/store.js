@@ -555,18 +555,46 @@ async function findClassesByStudent(studentUserId) {
   return result.rows;
 }
 
-// Lehrer-eigene Uploads (class_sources). Phase 1 nutzt wie der Rest der App
-// (siehe routes/processing.js generateMockTest) noch die Mock-Testgenerierung
-// - hier bewusst SYNCHRON statt der Polling-Simulation aus processing.js,
-// weil es keinen echten Verarbeitungsschritt gibt, der Zeit bräuchte
-// (Kritisch #6: echte KI-Generierung ist ein eigenständiges, noch offenes
-// Projekt). status steht deshalb direkt auf 'completed'.
-async function createClassSource({ classId, teacherId, title, test }) {
+// Lehrer-eigene Uploads (class_sources).
+//
+// ✅ KI-Testgenerierung Lehrer-Upload-Pfad (2026-09-03): vorher wurde hier
+// synchron sofort ein fertiger Mock-Test gespeichert (status='completed'),
+// weil es keinen echten Verarbeitungsschritt gab. Jetzt läuft das genau
+// wie beim Schüler-Upload (routes/processing.js) asynchron mit Status-
+// Polling: die Zeile startet als 'pending' OHNE test, routes/teacher.js
+// füllt test/status per updateClassSource() nach, sobald die echte
+// Pipeline (oder im Fehlerfall der Mock-Fallback) fertig ist.
+async function createClassSource({ classId, teacherId, title }) {
   const result = await query(
-    `INSERT INTO class_sources (class_id, teacher_id, title, status, progress, test, created_at)
-     VALUES ($1, $2, $3, 'completed', 100, $4, NOW())
+    `INSERT INTO class_sources (class_id, teacher_id, title, status, progress, created_at)
+     VALUES ($1, $2, $3, 'pending', 0, NOW())
      RETURNING *`,
-    [classId, teacherId, title, JSON.stringify(test)]
+    [classId, teacherId, title]
+  );
+  return result.rows[0];
+}
+
+// Analog zu updateSource() oben - gleiche generische Update-Logik, nur für
+// class_sources statt sources (zwei getrennte Tabellen, siehe Schema-
+// Kommentar am Dateianfang).
+async function updateClassSource(sourceId, updates) {
+  const fields = [];
+  const values = [];
+  let paramIndex = 1;
+
+  for (const [key, value] of Object.entries(updates)) {
+    const dbValue = key === 'test' ? JSON.stringify(value) : value;
+    fields.push(`${key} = $${paramIndex}`);
+    values.push(dbValue);
+    paramIndex++;
+  }
+
+  if (fields.length === 0) return null;
+
+  values.push(sourceId);
+  const result = await query(
+    `UPDATE class_sources SET ${fields.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+    values
   );
   return result.rows[0];
 }
@@ -688,6 +716,7 @@ module.exports = {
   findClassMembership,
   findClassesByStudent,
   createClassSource,
+  updateClassSource,
   findClassSourcesByClass,
   findClassSourceById,
   createClassSourceSubmission,

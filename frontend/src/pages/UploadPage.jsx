@@ -18,10 +18,11 @@ export default function UploadPage({ user }) {
   // ✅ KI-Testgenerierung (2026-09-03, siehe claude/KI-Testgenerierung-
   // Konzept-2026-09-03.md Abschnitt 4 + 7): Testtyp-Auswahl und
   // Einwilligungs-Checkbox, beide vorher hier komplett nicht vorhanden.
-  // "Vokabeltest" ist bewusst NICHT in der Auswahl, da die Matching-UI zur
-  // Bearbeitung eines Vokabeltests noch nicht gebaut ist (siehe
-  // Konzept-Dokument Abschnitt 4, VocabularyQuestion.jsx) - Backend kann
-  // ihn zwar schon generieren, ohne Anzeige-UI aber nicht sinnvoll wählbar.
+  // "Vokabeltest" war zunächst NICHT in der Auswahl, weil die Bearbeitungs-
+  // UI dafür noch nicht existierte - jetzt gebaut (siehe TestPlayer.jsx,
+  // Karteikarten-artige Eintipp-Übung statt der ursprünglich angedachten
+  // Zuordnungs-UI, siehe dortiger Kommentar für die Begründung) und deshalb
+  // hier freigeschaltet.
   const [testFormat, setTestFormat] = useState('multiple_choice');
   const [testScope, setTestScope] = useState('standard');
   const [aiConsent, setAiConsent] = useState(false);
@@ -220,6 +221,7 @@ export default function UploadPage({ user }) {
                   <option value="multiple_choice">Multiple Choice</option>
                   <option value="fill_gap">Lückentext</option>
                   <option value="mixed">Gemischt</option>
+                  <option value="vocabulary">Vokabeltest</option>
                 </select>
               </div>
               <div>

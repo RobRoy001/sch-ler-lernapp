@@ -233,9 +233,24 @@ export default function KlassePage() {
                       key={q.id}
                       className="bg-white border border-gray-100 rounded-lg p-6 shadow-sm"
                     >
-                      <h2 className="font-semibold text-gray-900 mb-4">
-                        {idx + 1}. {q.question_text}
-                      </h2>
+                      {/* ✅ Vokabeltest-UI (2026-09-03): "term" statt
+                          question_text prominent als Karteikarten-Begriff
+                          zeigen, siehe TestPlayer.jsx für dieselbe Logik im
+                          Schüler-eigenen Upload-Pfad. */}
+                      {q.type === 'vocabulary' ? (
+                        <>
+                          <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">
+                            {idx + 1}. Wie lautet die Übersetzung / Erklärung?
+                          </p>
+                          <p className="font-display text-2xl font-bold text-gray-900 mb-4">
+                            {q.term}
+                          </p>
+                        </>
+                      ) : (
+                        <h2 className="font-semibold text-gray-900 mb-4">
+                          {idx + 1}. {q.question_text}
+                        </h2>
+                      )}
 
                       {q.type === 'multiple_choice' && Array.isArray(q.options) ? (
                         <div className="space-y-2">

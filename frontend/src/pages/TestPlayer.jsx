@@ -199,9 +199,41 @@ export default function TestPlayer({ user }) {
 
               {/* Question Card */}
               <div className="bg-white border border-gray-100 rounded-lg p-8 shadow-sm mb-6">
-                <h2 className="font-display text-xl font-bold text-gray-900 mb-6">
-                  {currentQuestion?.question_text || 'Frage'}
-                </h2>
+                {/* ✅ Vokabeltest-UI (2026-09-03): eigene Überschrift statt der
+                    generischen question_text-Anzeige - "term" wird prominent
+                    als Karteikarten-Begriff gezeigt, siehe Frage-Typ-Block
+                    weiter unten für die Eingabe. */}
+                {currentQuestion?.type !== 'vocabulary' && (
+                  <h2 className="font-display text-xl font-bold text-gray-900 mb-6">
+                    {currentQuestion?.question_text || 'Frage'}
+                  </h2>
+                )}
+
+                {/* Question Type: Vokabeltest ("Karteikarte" - Begriff zeigen,
+                    Übersetzung eintippen). Bewusst als Eintipp- statt
+                    Zuordnungs-Übung umgesetzt: die KI liefert pro Frage genau
+                    ein Begriff/Übersetzungs-Paar (kein Bündel mehrerer Paare
+                    auf einmal, siehe questionGenerator.js), das passt sauber
+                    in die bestehende Eine-Frage-nach-der-anderen-Navigation
+                    dieser Seite, ohne sie umbauen zu müssen. */}
+                {currentQuestion?.type === 'vocabulary' && (
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-2">
+                      Wie lautet die Übersetzung / Erklärung?
+                    </p>
+                    <p className="font-display text-3xl font-bold text-gray-900 mb-6">
+                      {currentQuestion.term}
+                    </p>
+                    <input
+                      type="text"
+                      value={userAnswers[currentQuestion.id] || ''}
+                      onChange={(e) => handleAnswerChange(e.target.value)}
+                      placeholder="Deine Antwort…"
+                      className="w-full h-11 px-4 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      autoFocus
+                    />
+                  </div>
+                )}
 
                 {/* Question Type: Multiple Choice */}
                 {currentQuestion?.type === 'multiple_choice' && Array.isArray(currentQuestion?.options) && (

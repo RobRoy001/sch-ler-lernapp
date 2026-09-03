@@ -10,6 +10,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
 
 const { JWT_SECRET } = require('../config/jwt');
 const teacherAuthCheck = require('../middleware/teacherAuthCheck');
@@ -23,12 +24,30 @@ const {
   findClassById,
   findMembersByClass,
   createClassSource,
+  updateClassSource,
   findClassSourcesByClass,
   findClassSourceById,
   findSubmissionsByClassSource
 } = require('../store');
 
+// ✅ KI-Testgenerierung Lehrer-Upload-Pfad (2026-09-03): dieselbe echte
+// Pipeline wie beim Schüler-Upload (routes/processing.js), nur an
+// class_sources statt sources angeschlossen - siehe
+// claude/KI-Testgenerierung-Konzept-2026-09-03.md, Abschnitt "Lehrer-
+// Upload-Pfad" weiter unten in diesem Kommentarblock (processClassSource-
+// InBackground) für die Details.
+const { classSourceFiles } = require('../utils/pendingUploads');
+const { extractText } = require('../services/textExtraction');
+const { sanitizeForOpenAI } = require('../utils/contentSanitizer');
+const { generateQuestions } = require('../services/questionGenerator');
+const { VALID_TEST_FORMATS, VALID_TEST_SCOPES } = require('../utils/testFormats');
+
 const router = express.Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10 MB, gleiches Limit wie beim Schüler-Upload
+});
 
 const generateTeacherToken = (teacher) =>
   jwt.sign({ teacherId: teacher.id, email: teacher.email, type: 'teacher' }, JWT_SECRET, { expiresIn: '7d' });
@@ -99,6 +118,65 @@ function generateMockClassTest(title) {
       }
     ]
   };
+}
+
+// ✅ Echte Pipeline für den Lehrer-Upload (2026-09-03) - eins-zu-eins nach
+// dem Vorbild von processSourceInBackground() in routes/processing.js
+// (dort inzwischen live verifiziert, siehe Konzept-Dokument), nur an
+// class_sources/updateClassSource statt sources/updateSource angeschlossen.
+// Bewusst eine eigene, separate Funktion statt die aus processing.js zu
+// importieren und zu verbiegen - beide Pipelines sollen unabhängig
+// voneinander bleiben, damit eine Änderung am Schüler-Pfad nicht
+// versehentlich den (gerade erst stabilisierten) Lehrer-Pfad mit
+// beeinflusst und umgekehrt.
+//
+// Läuft NACH der Response weiter (fire-and-forget aus der Route unten) -
+// wirft deshalb nie einen Fehler nach außen: jeder Fehlerfall endet trotzdem
+// in status: 'completed' mit dem Mock-Test als Fallback (gleiche Robert-
+// Entscheidung wie beim Schüler-Upload: kein Hard-Block, kein dauerhafter
+// 'error'-Status, den das Frontend ohnehin nicht anzeigen würde).
+async function processClassSourceInBackground(sourceId) {
+  const pendingFile = classSourceFiles.take(String(sourceId));
+  let test = null;
+  let fallbackReason = null;
+
+  try {
+    await updateClassSource(sourceId, { progress: 25 });
+
+    if (!pendingFile) {
+      fallbackReason = 'keine Datei verknüpft';
+    } else if (!pendingFile.consent) {
+      fallbackReason = 'keine Einwilligung zur KI-Verarbeitung erteilt';
+    } else {
+      const { text } = await extractText(pendingFile.buffer, pendingFile.mimetype);
+      await updateClassSource(sourceId, { progress: 55 });
+
+      const sanitized = sanitizeForOpenAI(text);
+      await updateClassSource(sourceId, { progress: 70 });
+
+      test = await generateQuestions({
+        text: sanitized,
+        format: pendingFile.testFormat,
+        scope: pendingFile.testScope
+      });
+      await updateClassSource(sourceId, { progress: 90 });
+    }
+  } catch (err) {
+    fallbackReason = err.message;
+    console.error(`Echte Testgenerierung für Class-Source ${sourceId} fehlgeschlagen, nutze Mock-Fallback:`, err.message);
+  }
+
+  if (!test) {
+    // Titel kommt bewusst frisch aus der DB statt aus pendingFile (das im
+    // "keine Datei verknüpft"-Fall ohnehin leer ist) - ein zusätzlicher,
+    // günstiger Read statt den Titel zusätzlich im In-Memory-Store
+    // mitzuführen.
+    const sourceRow = await findClassSourceById(sourceId);
+    test = generateMockClassTest(sourceRow ? sourceRow.title : undefined);
+    test.fallback_reason = fallbackReason;
+  }
+
+  await updateClassSource(sourceId, { status: 'completed', progress: 100, test });
 }
 
 router.post('/register', async (req, res) => {
@@ -231,6 +309,7 @@ router.get('/classes/:id/progress', teacherAuthCheck, async (req, res) => {
           id: source.id,
           title: source.title,
           status: source.status,
+          progress: source.progress || 0,
           questionCount: source.test?.questions?.length || 0,
           completedCount: submissions.length,
           memberCount: members.length,
@@ -257,38 +336,66 @@ router.get('/classes/:id/progress', teacherAuthCheck, async (req, res) => {
   }
 });
 
-// Eigene Klassenarbeits-Uploads (Konzept Abschnitt 4). Phase 1 bewusst ohne
-// echten Datei-Upload/OCR - nur ein Titel/Thema als Text, die (Mock-)
-// Testgenerierung läuft synchron (siehe generateMockClassTest oben). Sobald
-// echte KI-Generierung existiert, wird hier der Verarbeitungsschritt
-// eingehängt, ohne die Route selbst ändern zu müssen.
-router.post('/classes/:id/sources', teacherAuthCheck, async (req, res) => {
+// Eigene Klassenarbeits-Uploads (Konzept Abschnitt 4).
+//
+// ✅ KI-Testgenerierung Lehrer-Upload-Pfad (2026-09-03): nimmt jetzt
+// zusätzlich eine echte Datei entgegen (multipart/form-data statt reinem
+// JSON, siehe upload.single('file') oben) sowie test_format/test_scope/
+// consent - genau wie POST /content/sources beim Schüler-Upload. Läuft
+// jetzt ASYNCHRON (Antwort kommt sofort mit status:'pending', die echte
+// Verarbeitung läuft danach im Hintergrund, siehe
+// processClassSourceInBackground oben) statt wie vorher synchron mit
+// sofort fertigem Mock-Test - das war nötig, weil OCR+OpenAI-Aufruf ein
+// paar Sekunden brauchen und dafür zu langsam für eine synchrone HTTP-
+// Antwort sind (gleicher Grund wie beim Schüler-Upload, siehe Konzept-
+// Dokument Abschnitt 6). Ein Titel bleibt weiterhin Pflicht, auch wenn
+// eine Datei hochgeladen wird - er dient als Bezeichnung der
+// Klassenarbeit in der Übersicht, unabhängig vom Dateiinhalt.
+router.post('/classes/:id/sources', teacherAuthCheck, upload.single('file'), async (req, res) => {
   try {
     const cls = await loadOwnedClass(req, res);
     if (!cls) return;
 
-    const { title } = req.body;
+    const { title, test_format, test_scope, consent } = req.body;
     if (!title || !title.trim()) {
       return res.status(400).json({ error: 'Titel/Thema der Klassenarbeit erforderlich' });
     }
 
-    const test = generateMockClassTest(title.trim());
     const source = await createClassSource({
       classId: cls.id,
       teacherId: req.teacher.id,
-      title: title.trim(),
-      test
+      title: title.trim()
     });
 
-    return res.status(201).json({
+    if (req.file) {
+      classSourceFiles.set(String(source.id), {
+        buffer: req.file.buffer,
+        mimetype: req.file.mimetype,
+        testFormat: VALID_TEST_FORMATS.includes(test_format) ? test_format : 'multiple_choice',
+        testScope: VALID_TEST_SCOPES.includes(test_scope) ? test_scope : 'standard',
+        consent: consent === true || consent === 'true'
+      });
+    }
+
+    res.status(201).json({
       success: true,
       source: {
         id: source.id,
         title: source.title,
         status: source.status,
-        questionCount: test.questions.length,
+        progress: source.progress || 0,
         createdAt: source.created_at
       }
+    });
+
+    // Fire-and-forget, wie beim Schüler-Upload (processing.js) - die
+    // Response ist bereits raus, ein hier geworfener Fehler würde also
+    // ohnehin nicht mehr beim Client ankommen. processClassSourceInBackground
+    // fängt intern jeden Fehler ab und landet immer bei status:'completed'
+    // (echter Test oder Mock-Fallback), dieser .catch() ist nur ein
+    // zusätzliches Sicherheitsnetz gegen einen unerwarteten Absturz.
+    processClassSourceInBackground(source.id).catch((err) => {
+      console.error(`Unerwarteter Fehler bei der Verarbeitung von Class-Source ${source.id}:`, err);
     });
   } catch (error) {
     console.error('Create Class Source Error:', error);
@@ -316,6 +423,7 @@ router.get('/classes/:id/sources/:sourceId', teacherAuthCheck, async (req, res) 
         id: source.id,
         title: source.title,
         status: source.status,
+        progress: source.progress || 0,
         test: source.test,
         createdAt: source.created_at
       }

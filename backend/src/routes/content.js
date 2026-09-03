@@ -5,14 +5,14 @@ const { createSource, nextFileId, findSourcesByUser, findSourceById } = require(
 const authCheck = require('../middleware/authCheck');
 const asyncHandler = require('../utils/asyncHandler');
 const { uploads, sourceFiles } = require('../utils/pendingUploads');
+// ✅ Lehrer-Upload-Pipeline (2026-09-03): diese beiden Konstanten werden
+// jetzt auch von routes/teacher.js gebraucht - siehe utils/testFormats.js.
+const { VALID_TEST_FORMATS, VALID_TEST_SCOPES } = require('../utils/testFormats');
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 } // 10 MB
 });
-
-const VALID_TEST_FORMATS = ['multiple_choice', 'fill_gap', 'mixed', 'vocabulary'];
-const VALID_TEST_SCOPES = ['standard', 'arbeitsvorbereitung'];
 
 // POST /api/content/upload
 //

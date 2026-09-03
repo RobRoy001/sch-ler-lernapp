@@ -6,11 +6,20 @@
 // bestehende Zwei-Schritt-API (POST /upload -> POST /sources -> POST
 // /processing/.../process) zu verändern:
 //
-// - uploads:     fileId   -> Datei-Buffer, zwischen POST /content/upload
-//                              und POST /content/sources
-// - sourceFiles: sourceId -> Datei-Buffer + gewählter Testtyp, zwischen
-//                              POST /content/sources und POST
-//                              /processing/sources/:id/process
+// - uploads:          fileId   -> Datei-Buffer, zwischen POST
+//                                    /content/upload und POST /content/sources
+// - sourceFiles:      sourceId -> Datei-Buffer + gewählter Testtyp, zwischen
+//                                    POST /content/sources und POST
+//                                    /processing/sources/:id/process
+// - classSourceFiles: sourceId -> Datei-Buffer + gewählter Testtyp, analoges
+//                                    Gegenstück für den Lehrer-Upload-Pfad
+//                                    (POST /teacher/classes/:id/sources,
+//                                    siehe routes/teacher.js). EIGENE Map,
+//                                    nicht sourceFiles wiederverwendet - die
+//                                    IDs kommen aus einer anderen DB-Tabelle
+//                                    (class_sources statt sources) und
+//                                    könnten sonst kollidieren (z.B. beide
+//                                    einmal die ID 5 vergeben).
 //
 // Vorher (Sicherheitsaudit-Nachtrag, siehe KI-Testgenerierung-Konzept
 // Abschnitt 1): die Datei-Bytes aus multer.memoryStorage() wurden nach dem
@@ -55,13 +64,15 @@ function makeStore() {
 
 const uploads = makeStore();
 const sourceFiles = makeStore();
+const classSourceFiles = makeStore();
 
 // .unref(), damit dieser Timer einen sauberen Prozess-Shutdown nicht
 // blockiert (z.B. bei Tests oder einem Neustart).
 const cleanupTimer = setInterval(() => {
   uploads.cleanup();
   sourceFiles.cleanup();
+  classSourceFiles.cleanup();
 }, 5 * 60 * 1000);
 cleanupTimer.unref();
 
-module.exports = { uploads, sourceFiles };
+module.exports = { uploads, sourceFiles, classSourceFiles };

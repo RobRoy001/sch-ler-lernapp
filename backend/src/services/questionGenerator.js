@@ -128,6 +128,18 @@ function normalizeQuestion(raw, format, index) {
       type: 'vocabulary',
       term: raw.term,
       translation: raw.translation,
+      // ✅ Vokabeltest-UI (2026-09-03): question_text/correct_answer werden
+      // zusätzlich zu term/translation gefüllt, obwohl der Vokabeltyp
+      // eigentlich sein eigenes Schema hat (siehe questionValidator.js).
+      // Grund: die serverseitige Bewertung in routes/processing.js bzw.
+      // routes/teacher.js (POST .../submit) vergleicht IMMER gegen
+      // q.correct_answer, unabhängig vom Fragetyp - ohne dieses Feld wäre
+      // jede Vokabelantwort automatisch als falsch gewertet worden, egal
+      // was der Nutzer eingibt. question_text dient nur als Fallback-
+      // Anzeige, falls irgendwo (noch) keine eigene Vokabel-Darstellung
+      // existiert.
+      question_text: raw.term,
+      correct_answer: raw.translation,
       explanation: raw.explanation || ''
     };
   }
