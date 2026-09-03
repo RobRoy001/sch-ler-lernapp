@@ -16,7 +16,17 @@
 // Fehlschlags - Workaround: als Foto (JPG/PNG) statt als PDF hochladen.
 
 const { createWorker } = require('tesseract.js');
-const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+// ⚠️ HOTFIX (2026-09-03, Produktions-Crash): pdfjs-dist v4 ist reines ESM
+// (package.json "main": "build/pdf.mjs", kein CJS-Build mehr unter
+// legacy/build/ - dort liegen nur noch .mjs-Dateien). Ein Top-Level
+// require('pdfjs-dist/legacy/build/pdf.js') wirft deshalb sofort beim
+// Server-Start "Cannot find module", noch bevor Express überhaupt startet
+// (server.js -> routes/processing.js -> dieses File ist ein synchroner
+// require-Chain). Fix: pdfjs-dist NICHT mehr top-level requiren, sondern
+// per dynamischem import() erst dann laden, wenn tatsächlich ein PDF
+// verarbeitet wird (CommonJS darf ESM-Pakete per import() nachladen) -
+// siehe extractFromPdf() unten. tesseract.js bleibt unverändert, das ist
+// ein normales CJS-Paket ({"main": "src/index.js"}, kein type/exports-Feld).
 
 // Unterhalb dieser Zeichenzahl gilt die Extraktion als gescheitert (siehe
 // Konzept-Dokument Abschnitt 5, Schritt 4 - Mindest-Qualitätscheck VOR dem
@@ -42,6 +52,8 @@ async function extractFromImage(buffer) {
 }
 
 async function extractFromPdf(buffer) {
+  // Lazy-Load statt Top-Level-Require, siehe Kommentar am Datei-Anfang.
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
   const pdf = await loadingTask.promise;
 
