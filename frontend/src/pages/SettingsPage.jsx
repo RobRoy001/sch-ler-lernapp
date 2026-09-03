@@ -20,13 +20,17 @@ export default function SettingsPage({ user, onLogout }) {
     navigate('/');
   };
 
+  // ✅ Fix (2026-09-03): nutzt jetzt wie der Rest der App das httpOnly-
+  // Cookie ("credentials: 'include'") statt eines localStorage-Tokens, den
+  // seit der Umstellung auf Cookies (Sicherheitsaudit Mittel #16) niemand
+  // mehr befüllt hat - dadurch schlug der Export vorher immer mit "Token
+  // ungültig oder abgelaufen" fehl, obwohl die Session gültig war.
   const handleExport = async () => {
     setExportLoading(true);
     setExportError('');
     try {
-      const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/auth/export-data`, {
-        headers: { Authorization: `Bearer ${token}` }
+        credentials: 'include'
       });
 
       if (!response.ok) {
@@ -50,6 +54,8 @@ export default function SettingsPage({ user, onLogout }) {
     }
   };
 
+  // ✅ Fix (2026-09-03): siehe handleExport oben - gleiche Umstellung von
+  // localStorage-Token auf Cookie-basierte Auth.
   const handleDeleteAccount = async () => {
     if (!deletePassword) {
       setDeleteError('Bitte gib dein Passwort ein');
@@ -59,12 +65,11 @@ export default function SettingsPage({ user, onLogout }) {
     setDeleteLoading(true);
     setDeleteError('');
     try {
-      const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/auth/account`, {
         method: 'DELETE',
+        credentials: 'include',
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ password: deletePassword })
       });

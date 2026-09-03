@@ -20,43 +20,59 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
 
+  // ✅ Fix (2026-09-03): Session-Check nutzt jetzt konsequent das
+  // httpOnly-Cookie statt eines localStorage-Tokens. Seit der Umstellung
+  // auf Cookies (Sicherheitsaudit Mittel #16) hat kein Code mehr wirklich
+  // einen gültigen Token in localStorage geschrieben - LoginPage/
+  // RegisterPage rufen onLoginSuccess nur noch mit den Nutzerdaten auf,
+  // ohne Token. Dadurch landete hier vorher literal der String
+  // "undefined" in localStorage, wurde als Bearer-Token mitgeschickt und
+  // vom Backend zurecht abgelehnt - Nutzer wurden bei jedem Seiten-Reload
+  // ausgeloggt, obwohl das Cookie die ganze Zeit gültig war.
+  //
+  // Jetzt: einfacher Check per Cookie. "credentials: 'include'" sorgt
+  // dafür, dass der Browser das httpOnly-Cookie automatisch mitschickt -
+  // das Frontend sieht/speichert den Token gar nicht mehr selbst.
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) verifyToken(token);
-    else setLoading(false);
+    const checkSession = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+          method: 'GET',
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setUser(data);
+          setIsAuthenticated(true);
+        }
+      } catch (error) {
+        console.error('Session-Check fehlgeschlagen:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkSession();
   }, []);
 
-  const verifyToken = async (token) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/profile`, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUser(data);
-        setIsAuthenticated(true);
-      } else {
-        localStorage.removeItem('token');
-        setIsAuthenticated(false);
-      }
-    } catch (error) {
-      console.error('Token Verification Error:', error);
-      localStorage.removeItem('token');
-      setIsAuthenticated(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLoginSuccess = (userData, token) => {
-    localStorage.setItem('token', token);
+  const handleLoginSuccess = (userData) => {
     setUser(userData);
     setIsAuthenticated(true);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
+  const handleLogout = async () => {
+    try {
+      // Löscht das httpOnly-Cookie serverseitig (siehe server.js /auth/logout
+      // und utils/cookies.js clearAuthCookie) - ohne diesen Aufruf bliebe das
+      // Cookie im Browser bestehen und ein Reload würde die Session sofort
+      // wiederherstellen, obwohl der Nutzer sich "ausgeloggt" hat.
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+    } catch (error) {
+      console.error('Logout-Request fehlgeschlagen:', error);
+    }
     setUser(null);
     setIsAuthenticated(false);
   };
