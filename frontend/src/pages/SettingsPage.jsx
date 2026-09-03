@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, LogOut, User, Download, Trash2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, LogOut, User, Download, Trash2, AlertTriangle, Users, X } from 'lucide-react';
 import Logo from '../components/Logo';
 import { API_BASE_URL } from '../config/api';
 
@@ -14,6 +14,54 @@ export default function SettingsPage({ user, onLogout }) {
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+
+  // ✅ Eltern-Board (2026-09-03): "Verknüpfte Eltern" - zeigt, welche
+  // Erziehungsberechtigten aktuell Lesezugriff auf den Fortschritt dieses
+  // Kontos haben (siehe backend/src/routes/parent.js), mit der Möglichkeit,
+  // den Zugriff selbst zu entziehen.
+  const [linkedParents, setLinkedParents] = useState([]);
+  const [parentsLoading, setParentsLoading] = useState(true);
+  const [parentsError, setParentsError] = useState('');
+  const [revokingId, setRevokingId] = useState(null);
+
+  useEffect(() => {
+    const loadParents = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/parent-links`, {
+          credentials: 'include'
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Verknüpfte Eltern konnten nicht geladen werden');
+        }
+        setLinkedParents(data.parents || []);
+      } catch (err) {
+        setParentsError(err.message);
+      } finally {
+        setParentsLoading(false);
+      }
+    };
+    loadParents();
+  }, []);
+
+  const handleRevokeParent = async (parentId) => {
+    setRevokingId(parentId);
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/parent-links/${parentId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Zugriff konnte nicht entzogen werden');
+      }
+      setLinkedParents((prev) => prev.filter((p) => p.id !== parentId));
+    } catch (err) {
+      setParentsError(err.message);
+    } finally {
+      setRevokingId(null);
+    }
+  };
 
   const handleLogout = () => {
     onLogout();
@@ -117,6 +165,48 @@ export default function SettingsPage({ user, onLogout }) {
               )}
             </div>
           </div>
+        </div>
+
+        <div className="bg-cream border border-gray-100 rounded-lg p-6 shadow-sm mb-6">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-4">
+            Verknüpfte Eltern
+          </h2>
+
+          {parentsLoading && <p className="text-gray-400 text-sm">Wird geladen…</p>}
+
+          {parentsError && (
+            <p className="text-error-dark text-sm mb-3">{parentsError}</p>
+          )}
+
+          {!parentsLoading && linkedParents.length === 0 && !parentsError && (
+            <p className="text-gray-500 text-sm">
+              Aktuell hat kein Erziehungsberechtigter Zugriff auf dein Eltern-Board.
+            </p>
+          )}
+
+          {linkedParents.length > 0 && (
+            <div className="space-y-2">
+              {linkedParents.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between bg-white border border-gray-100 rounded-md px-4 py-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <Users size={16} className="text-gray-400" />
+                    <span className="text-gray-700 text-sm">{p.email}</span>
+                  </div>
+                  <button
+                    onClick={() => handleRevokeParent(p.id)}
+                    disabled={revokingId === p.id}
+                    className="flex items-center gap-1 text-gray-400 hover:text-error-dark text-xs font-medium transition disabled:opacity-60"
+                  >
+                    <X size={14} />
+                    {revokingId === p.id ? 'Wird entfernt…' : 'Zugriff entfernen'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="bg-cream border border-gray-100 rounded-lg p-6 shadow-sm mb-6">

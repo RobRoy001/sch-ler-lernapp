@@ -9,7 +9,11 @@ const { JWT_SECRET } = require('./config/jwt');
 const { sendParentConsentEmail } = require('./config/email');
 const { calculateAge } = require('./utils/age');
 const authCheck = require('./middleware/authCheck');
-const { setAuthCookie, clearAuthCookie } = require('./utils/cookies');
+const {
+  setAuthCookie,
+  clearAuthCookie,
+  setParentAuthCookie
+} = require('./utils/cookies');
 const { apiLimiter, authLimiter } = require('./middleware/rateLimiter');
 const { query } = require('./database/connection');
 const {
@@ -20,10 +24,16 @@ const {
   findUserByConsentToken,
   updateUser,
   exportUserData,
-  deleteUser
+  deleteUser,
+  createParent,
+  findParentByEmail,
+  createParentChildLink,
+  findParentsByChild,
+  revokeParentChildLink
 } = require('./store');
 const processingRouter = require('./routes/processing');
 const contentRouter = require('./routes/content');
+const parentRouter = require('./routes/parent');
 
 // Unter diesem Alter ist laut Art. 8 DSGVO eine Elternzustimmung nötig,
 // bevor ein Konto aktiv genutzt werden darf (Sicherheitsaudit Kritisch #5).
@@ -34,6 +44,9 @@ const app = express();
 
 const generateToken = (user) =>
   jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+
+const generateParentToken = (parent) =>
+  jwt.sign({ parentId: parent.id, email: parent.email, type: 'parent' }, JWT_SECRET, { expiresIn: '7d' });
 
 const publicUser = (user) => ({
   id: user.id,
@@ -220,9 +233,16 @@ app.get('/api/auth/parent-consent', async (req, res) => {
 });
 
 // ✅ Elternzustimmung - Bestätigung
+//
+// ✅ Eltern-Board (2026-09-03): optional wird beim Bestätigen direkt ein
+// Eltern-Konto angelegt (oder ein bestehendes damit verknüpft), damit der
+// Erziehungsberechtigte ohne separaten Registrierungs-Schritt Zugriff auf
+// das Eltern-Board bekommt (siehe frontend ParentConsentPage.jsx -
+// Passwort-Feld ist optional). Ohne Passwort bleibt es beim bisherigen
+// Verhalten: nur Zustimmung, kein Eltern-Konto.
 app.post('/api/auth/parent-consent/confirm', async (req, res) => {
   try {
-    const { token } = req.body;
+    const { token, password } = req.body;
     if (!token) {
       return res.status(400).json({ error: 'Token erforderlich' });
     }
@@ -244,13 +264,80 @@ app.post('/api/auth/parent-consent/confirm', async (req, res) => {
       parentConsentAt: new Date().toISOString()
     });
 
+    if (!password) {
+      return res.json({
+        success: true,
+        message: 'Zustimmung bestätigt. Das Konto ist jetzt freigeschaltet und kann sich einloggen.'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Passwort muss mindestens 6 Zeichen lang sein' });
+    }
+
+    let parent = await findParentByEmail(user.parent_email);
+    let parentAccountCreated = false;
+
+    if (parent) {
+      const validPassword = await bcrypt.compare(password, parent.password_hash);
+      if (!validPassword) {
+        // Zustimmung ist trotzdem bereits bestätigt (siehe oben) - nur das
+        // Verknüpfen mit dem Eltern-Konto schlägt fehl. Elternteil kann sich
+        // regulär unter /eltern/login einloggen und muss dort das Kind dann
+        // manuell erneut verknüpfen (Phase 2) oder Support kontaktieren.
+        return res.status(409).json({
+          error: 'Für diese Email existiert bereits ein Eltern-Konto. Bitte melde dich mit dem bestehenden Passwort im Eltern-Board an.',
+          parentAccountExists: true
+        });
+      }
+    } else {
+      const parentPasswordHash = await bcrypt.hash(password, 10);
+      parent = await createParent({ email: user.parent_email, password: parentPasswordHash, name: null });
+      parentAccountCreated = true;
+    }
+
+    await createParentChildLink(parent.id, user.id);
+
+    const parentToken = generateParentToken(parent);
+    setParentAuthCookie(res, parentToken);
+
     return res.json({
       success: true,
-      message: 'Zustimmung bestätigt. Das Konto ist jetzt freigeschaltet und kann sich einloggen.'
+      message: 'Zustimmung bestätigt. Das Konto ist jetzt freigeschaltet.',
+      parentAccountCreated,
+      parentLoggedIn: true
     });
   } catch (error) {
     console.error('Parent Consent Error:', error);
     return res.status(500).json({ error: 'Bestätigung fehlgeschlagen' });
+  }
+});
+
+// ✅ Eltern-Board: verknüpfte Eltern anzeigen (Einstellungen-Seite)
+app.get('/api/auth/parent-links', authCheck, async (req, res) => {
+  try {
+    const parents = await findParentsByChild(req.user.id);
+    return res.json({
+      parents: parents.map((p) => ({ id: p.id, email: p.email, linkedAt: p.linked_at }))
+    });
+  } catch (error) {
+    console.error('Parent Links Error:', error);
+    return res.status(500).json({ error: 'Verknüpfte Eltern konnten nicht geladen werden' });
+  }
+});
+
+// ✅ Eltern-Board: Zugriff eines Elternteils entziehen (vom Kind-Konto aus)
+app.delete('/api/auth/parent-links/:parentId', authCheck, async (req, res) => {
+  try {
+    const parentId = parseInt(req.params.parentId, 10);
+    if (!parentId) {
+      return res.status(400).json({ error: 'Ungültige Eltern-ID' });
+    }
+    await revokeParentChildLink(parentId, req.user.id);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Revoke Parent Link Error:', error);
+    return res.status(500).json({ error: 'Zugriff konnte nicht entzogen werden' });
   }
 });
 
@@ -355,6 +442,9 @@ app.use('/api/content', contentRouter);
 // ✅ Processing Routes
 app.use('/api/processing', processingRouter);
 
+// ✅ Eltern-Board Routes (2026-09-03)
+app.use('/api/parent', parentRouter);
+
 // 404 Handler
 app.use((req, res) => {
   res.status(404).json({
@@ -376,13 +466,24 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 if (require.main === module) {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n╔════════════════════════════════════════╗\n║        🚀 LernApp Server Started       ║\n╠════════════════════════════════════════╣\n║ Port: ${PORT}\n║ Environment: ${process.env.NODE_ENV || 'development'}\n║ Status: Running ✅\n║ Auth: Ready (echte DB)\n║ Processing: Ready\n╚════════════════════════════════════════╝\n    `);
-  });
+  const { runMigrations } = require('./database/migrations');
 
-  query('SELECT 1')
-    .then(() => console.log('✅ Datenbankverbindung erfolgreich (Supabase/Postgres).'))
-    .catch((err) => console.error('❌ Datenbankverbindung fehlgeschlagen - DATABASE_URL in backend/.env prüfen:', err.message));
+  (async () => {
+    try {
+      await query('SELECT 1');
+      console.log('✅ Datenbankverbindung erfolgreich (Supabase/Postgres).');
+      await runMigrations();
+    } catch (err) {
+      console.error(
+        '❌ Datenbankverbindung/Migration fehlgeschlagen - DATABASE_URL in backend/.env prüfen:',
+        err.message
+      );
+    }
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`\n╔════════════════════════════════════════╗\n║        🚀 LernApp Server Started       ║\n╠════════════════════════════════════════╣\n║ Port: ${PORT}\n║ Environment: ${process.env.NODE_ENV || 'development'}\n║ Status: Running ✅\n║ Auth: Ready (echte DB)\n║ Processing: Ready\n╚════════════════════════════════════════╝\n    `);
+    });
+  })();
 }
 
 module.exports = app;

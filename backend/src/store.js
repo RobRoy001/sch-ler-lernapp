@@ -9,6 +9,10 @@
 //            status, progress, test (jsonb), created_at
 //   test_submissions: id, user_id, test_id, correct_count, total_questions,
 //                      accuracy, answers_json, time_taken, submitted_at
+//   parents: id, email, password_hash, name, created_at (Eltern-Board,
+//            2026-09-03 - siehe database/migrations.js)
+//   parent_child_links: id, parent_id, child_id, status, created_at,
+//                        revoked_at (Eltern-Board, 2026-09-03)
 
 const { query } = require('./database/connection');
 
@@ -255,6 +259,105 @@ async function findSubmissionById(submissionId, userId) {
 }
 
 // ============================================================================
+// PARENTS / ELTERN-BOARD (2026-09-03)
+//
+// Ein Elternteil ist bewusst KEIN "users"-Eintrag: eigene Tabelle, eigenes
+// Login (siehe routes/parent.js), eigenes Cookie (parent_token). Die
+// Verknüpfung zu Kindern läuft über parent_child_links, damit ein
+// Elternteil künftig auch mehrere Kinder verwalten kann (Geschwister).
+// ============================================================================
+
+async function createParent({ email, password, name }) {
+  const result = await query(
+    `INSERT INTO parents (email, password_hash, name, created_at)
+     VALUES ($1, $2, $3, NOW())
+     RETURNING id, email, name, created_at`,
+    [email, password, name || null]
+  );
+  return result.rows[0];
+}
+
+async function findParentByEmail(email) {
+  const result = await query('SELECT * FROM parents WHERE email = $1', [email]);
+  return result.rows[0];
+}
+
+async function findParentById(parentId) {
+  const result = await query(
+    'SELECT id, email, name, created_at FROM parents WHERE id = $1',
+    [parentId]
+  );
+  return result.rows[0];
+}
+
+// ON CONFLICT: falls der Link schon existiert (z.B. Elternteil bestätigt den
+// Consent-Link versehentlich zweimal), einfach wieder auf 'active' setzen
+// statt mit einem Datenbank-Fehler abzubrechen.
+async function createParentChildLink(parentId, childId) {
+  const result = await query(
+    `INSERT INTO parent_child_links (parent_id, child_id, status, created_at)
+     VALUES ($1, $2, 'active', NOW())
+     ON CONFLICT (parent_id, child_id)
+     DO UPDATE SET status = 'active', revoked_at = NULL
+     RETURNING *`,
+    [parentId, childId]
+  );
+  return result.rows[0];
+}
+
+async function findChildrenByParent(parentId) {
+  const result = await query(
+    `SELECT u.id, u.name, u.grade_level, u.email
+     FROM parent_child_links pcl
+     JOIN users u ON u.id = pcl.child_id
+     WHERE pcl.parent_id = $1 AND pcl.status = 'active'
+     ORDER BY u.name ASC`,
+    [parentId]
+  );
+  return result.rows;
+}
+
+// Ownership-Check: darf dieser Elternteil auf dieses Kind zugreifen? Ohne
+// diesen Check könnte ein Elternteil per URL-Manipulation
+// (/api/parent/children/:childId/progress) die Testergebnisse fremder
+// Kinder abrufen (gleiches Muster wie Sicherheitsaudit Kritisch #3 -
+// Autorisierung nie aus einem frei wählbaren Parameter ableiten, sondern
+// immer serverseitig gegen die tatsächliche Verknüpfung prüfen).
+async function findParentChildLink(parentId, childId) {
+  const result = await query(
+    `SELECT * FROM parent_child_links
+     WHERE parent_id = $1 AND child_id = $2 AND status = 'active'`,
+    [parentId, childId]
+  );
+  return result.rows[0];
+}
+
+// Vom Kind-Konto aus genutzt (Einstellungen -> "Verknüpfte Eltern").
+async function findParentsByChild(childId) {
+  const result = await query(
+    `SELECT p.id, p.email, p.name, pcl.created_at AS linked_at
+     FROM parent_child_links pcl
+     JOIN parents p ON p.id = pcl.parent_id
+     WHERE pcl.child_id = $1 AND pcl.status = 'active'
+     ORDER BY pcl.created_at ASC`,
+    [childId]
+  );
+  return result.rows;
+}
+
+// Vom Kind aus aufgerufen (Einstellungen -> "Verknüpfte Eltern" -> Entfernen).
+async function revokeParentChildLink(parentId, childId) {
+  const result = await query(
+    `UPDATE parent_child_links
+     SET status = 'revoked', revoked_at = NOW()
+     WHERE parent_id = $1 AND child_id = $2
+     RETURNING *`,
+    [parentId, childId]
+  );
+  return result.rows[0];
+}
+
+// ============================================================================
 // EXPORTS
 // ============================================================================
 
@@ -281,5 +384,15 @@ module.exports = {
   // Test Submissions
   createSubmission,
   findSubmissionsByUser,
-  findSubmissionById
+  findSubmissionById,
+
+  // Parents / Eltern-Board
+  createParent,
+  findParentByEmail,
+  findParentById,
+  createParentChildLink,
+  findChildrenByParent,
+  findParentChildLink,
+  findParentsByChild,
+  revokeParentChildLink
 };

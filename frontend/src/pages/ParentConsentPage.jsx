@@ -10,6 +10,12 @@ import { API_BASE_URL } from '../config/api';
 // (POST /auth/parent-consent/confirm) existiert bereits, diese Seite
 // stellt nur das UI dafür bereit. Bewusst ohne Login erreichbar, da der
 // Erziehungsberechtigte selbst kein Konto in der App hat.
+//
+// ✅ Eltern-Board (2026-09-03): optionales Passwort-Feld. Wird es
+// ausgefüllt, legt der Server beim Bestätigen direkt ein Eltern-Konto an
+// (oder verknüpft ein bestehendes) und loggt den Elternteil sofort im
+// Eltern-Board ein - ohne diesen Zwischenschritt bräuchte es eine separate
+// Registrierung, die es in Phase 1 bewusst nicht gibt.
 
 export default function ParentConsentPage() {
   const [searchParams] = useSearchParams();
@@ -18,6 +24,8 @@ export default function ParentConsentPage() {
   const [status, setStatus] = useState('loading'); // loading | preview | confirming | confirmed | error
   const [childName, setChildName] = useState('');
   const [parentEmail, setParentEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [parentLoggedIn, setParentLoggedIn] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -55,8 +63,9 @@ export default function ParentConsentPage() {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/parent-consent/confirm`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token })
+        body: JSON.stringify({ token, password: password || undefined })
       });
       const data = await response.json();
 
@@ -64,6 +73,7 @@ export default function ParentConsentPage() {
         throw new Error(data.error || 'Bestätigung fehlgeschlagen');
       }
 
+      setParentLoggedIn(!!data.parentLoggedIn);
       setStatus('confirmed');
     } catch (err) {
       setStatus('error');
@@ -101,6 +111,25 @@ export default function ParentConsentPage() {
               <p className="text-xs text-gray-500 mb-6">
                 Diese Anfrage wurde an {parentEmail} gesendet.
               </p>
+
+              <div className="text-left mb-6">
+                <label className="block text-xs font-semibold text-gray-500 mb-1">
+                  Passwort für dein Eltern-Board (optional)
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Mindestens 6 Zeichen"
+                  className="w-full h-11 px-4 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Damit kannst du dich später unter /eltern/login einloggen und den Fortschritt
+                  von {childName ? childName.split(' ')[0] : 'deinem Kind'} einsehen. Ohne
+                  Passwort bestätigst du nur die Zustimmung.
+                </p>
+              </div>
+
               <button
                 onClick={handleConfirm}
                 className="w-full bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold transition"
@@ -126,13 +155,23 @@ export default function ParentConsentPage() {
               <p className="text-gray-600 text-sm mb-6">
                 Vielen Dank. Das Konto von {childName} ist jetzt freigeschaltet und kann
                 verwendet werden.
+                {parentLoggedIn && ' Dein Eltern-Board ist ebenfalls bereit.'}
               </p>
-              <Link
-                to="/"
-                className="inline-block bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold transition"
-              >
-                Zur Anmeldung
-              </Link>
+              {parentLoggedIn ? (
+                <Link
+                  to="/eltern"
+                  className="inline-block bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold transition"
+                >
+                  Zum Eltern-Board
+                </Link>
+              ) : (
+                <Link
+                  to="/"
+                  className="inline-block bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold transition"
+                >
+                  Zur Anmeldung
+                </Link>
+              )}
             </div>
           )}
 

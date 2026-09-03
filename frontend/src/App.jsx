@@ -12,6 +12,9 @@ import TasksOverviewPage from './pages/TasksOverviewPage';
 import TestPlayer from './pages/TestPlayer';
 import ResultsPage from './pages/ResultsPage';
 import SettingsPage from './pages/SettingsPage';
+import ElternLoginPage from './pages/eltern/ElternLoginPage';
+import ElternDashboardPage from './pages/eltern/ElternDashboardPage';
+import ElternKindPage from './pages/eltern/ElternKindPage';
 import Logo from './components/Logo';
 import { API_BASE_URL } from './config/api';
 
@@ -101,6 +104,13 @@ function App() {
                 muss auch ohne Login erreichbar sein, da der Elternteil selbst
                 kein Konto in der App hat. */}
             <Route path="/parent-consent" element={<ParentConsentPage />} />
+            {/* Eltern-Board (2026-09-03): eigene Login-Identität für Eltern,
+                unabhängig vom Kind-Auth-State hier in App.jsx (eigenes
+                "parent_token"-Cookie, siehe backend/src/utils/cookies.js) -
+                die Seiten selbst prüfen ihre Session über GET /api/parent/me. */}
+            <Route path="/eltern/login" element={<ElternLoginPage />} />
+            <Route path="/eltern" element={<ElternDashboardPage />} />
+            <Route path="/eltern/kind/:childId" element={<ElternKindPage />} />
             {/* Impressum/Datenschutz (Sicherheitsaudit Hoch #12) - müssen
                 unabhängig vom Login-Status erreichbar sein (Pflicht nach
                 § 5 DDG / Art. 13-14 DSGVO). */}
@@ -120,6 +130,9 @@ function App() {
             {/* Auch erreichbar, falls z.B. ein Elternteil den Link auf einem
                 Gerät öffnet, auf dem gerade ein anderes Konto eingeloggt ist. */}
             <Route path="/parent-consent" element={<ParentConsentPage />} />
+            <Route path="/eltern/login" element={<ElternLoginPage />} />
+            <Route path="/eltern" element={<ElternDashboardPage />} />
+            <Route path="/eltern/kind/:childId" element={<ElternKindPage />} />
             <Route path="/impressum" element={<ImpressumPage />} />
             <Route path="/datenschutz" element={<DatenschutzPage />} />
             <Route path="*" element={<Navigate to="/" />} />

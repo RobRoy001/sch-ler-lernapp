@@ -13,54 +13,88 @@
 // - local dev (localhost): SameSite=Lax erlaubt, weil alles auf einer Domain
 // - production (cross-domain): SameSite=None;Secure erforderlich, damit
 //   Browser das Cookie auch bei Cross-Origin-Requests mitschickt
+//
+// Erweiterung (Eltern-Board, 2026-09-03): Ein Elternteil hat eine eigene
+// Login-Identität, komplett getrennt vom Kind-Konto. Damit ein Elternteil
+// und ein Kind gleichzeitig auf demselben Gerät eingeloggt sein können
+// (z.B. Eltern schauen sich das Eltern-Board an, während das Kind auf
+// demselben Rechner sein eigenes Konto offen hat), bekommt der Elternteil
+// ein EIGENES Cookie ("parent_token") statt das bestehende "token"-Cookie
+// zu überschreiben. Beide Cookies teilen sich dieselben Sicherheits-
+// Einstellungen (httpOnly/secure/sameSite) - nur der Name unterscheidet sie.
 
 const COOKIE_NAME = 'token';
+const PARENT_COOKIE_NAME = 'parent_token';
 const COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 Tage, wie JWT expiresIn
 
 function isProdEnv() {
   return process.env.NODE_ENV === 'production';
 }
 
-function setAuthCookie(res, token) {
-  const sameSite = isProdEnv() ? 'None' : 'Lax';
-  const secure = isProdEnv(); // Secure flag nur in production (https erforderlich)
-
-  res.cookie(COOKIE_NAME, token, {
+function buildCookieOptions(maxAgeMs) {
+  return {
     httpOnly: true,
-    secure,
-    sameSite,
-    maxAge: COOKIE_MAX_AGE_SECONDS * 1000, // in Millisekunden
+    secure: isProdEnv(), // Secure flag nur in production (https erforderlich)
+    sameSite: isProdEnv() ? 'None' : 'Lax',
+    maxAge: maxAgeMs, // in Millisekunden
     path: '/',
     domain: undefined // Browser default: aktuelle Domain
-  });
+  };
 }
 
-function clearAuthCookie(res) {
-  res.cookie(COOKIE_NAME, '', {
-    httpOnly: true,
-    secure: isProdEnv(),
-    sameSite: isProdEnv() ? 'None' : 'Lax',
-    maxAge: 0,
-    path: '/'
-  });
+function setCookie(res, name, token) {
+  res.cookie(name, token, buildCookieOptions(COOKIE_MAX_AGE_SECONDS * 1000));
 }
 
-function getTokenFromCookies(req) {
+function clearCookie(res, name) {
+  res.cookie(name, '', buildCookieOptions(0));
+}
+
+function getCookieValue(req, name) {
   // Cookie-Header format: "name1=value1; name2=value2; ..."
   // Einfacher Parser ohne 'cookie-parser' dependency
   if (!req.headers.cookie) return undefined;
 
   const cookies = req.headers.cookie.split(';').reduce((acc, cookie) => {
-    const [name, value] = cookie.trim().split('=');
-    acc[name] = value;
+    const [cname, value] = cookie.trim().split('=');
+    acc[cname] = value;
     return acc;
   }, {});
 
-  return cookies[COOKIE_NAME];
+  return cookies[name];
+}
+
+// Kind-Konto (unverändert seit Sicherheitsaudit Mittel #16)
+function setAuthCookie(res, token) {
+  setCookie(res, COOKIE_NAME, token);
+}
+
+function clearAuthCookie(res) {
+  clearCookie(res, COOKIE_NAME);
+}
+
+function getTokenFromCookies(req) {
+  return getCookieValue(req, COOKIE_NAME);
+}
+
+// Eltern-Konto (Eltern-Board, 2026-09-03)
+function setParentAuthCookie(res, token) {
+  setCookie(res, PARENT_COOKIE_NAME, token);
+}
+
+function clearParentAuthCookie(res) {
+  clearCookie(res, PARENT_COOKIE_NAME);
+}
+
+function getParentTokenFromCookies(req) {
+  return getCookieValue(req, PARENT_COOKIE_NAME);
 }
 
 module.exports = {
   setAuthCookie,
   clearAuthCookie,
-  getTokenFromCookies
+  getTokenFromCookies,
+  setParentAuthCookie,
+  clearParentAuthCookie,
+  getParentTokenFromCookies
 };
