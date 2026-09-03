@@ -1,46 +1,56 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { LogoWithText } from '../components/Logo';
+import { CheckCircle, XCircle, AlertTriangle, Clock } from 'lucide-react';
+import Logo from '../components/Logo';
 import { API_BASE_URL } from '../config/api';
 
-// Sicherheitsaudit Kritisch #5 (Art. 8 DSGVO): diese Seite ist das Ziel des
-// Links aus der Eltern-Email (siehe backend/src/config/email.js - im
-// Mock-Modus landet der Link nicht wirklich im Postfach, sondern gut
-// sichtbar in der Server-Konsole, von dort zum Testen kopieren).
+// ✅ Sicherheitsaudit Kritisch #5 (Art. 8 DSGVO): Ziel des Links aus der
+// Eltern-Email. Ohne diese Seite gäbe es keine Möglichkeit, ein Konto
+// eines unter 16-Jährigen jemals zu aktivieren - der Server-Endpoint
+// (POST /auth/parent-consent/confirm) existiert bereits, diese Seite
+// stellt nur das UI dafür bereit. Bewusst ohne Login erreichbar, da der
+// Erziehungsberechtigte selbst kein Konto in der App hat.
+
 export default function ParentConsentPage() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
 
-  // 'loading' | 'preview' | 'confirming' | 'confirmed' | 'error'
-  const [state, setState] = useState('loading');
-  const [preview, setPreview] = useState(null);
+  const [status, setStatus] = useState('loading'); // loading | preview | confirming | confirmed | error
+  const [childName, setChildName] = useState('');
+  const [parentEmail, setParentEmail] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!token) {
-      setError('Kein Bestätigungs-Token in diesem Link gefunden.');
-      setState('error');
+      setStatus('error');
+      setError('Kein gültiger Bestätigungs-Link. Bitte prüfe den Link aus der Email.');
       return;
     }
-
-    const loadPreview = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/parent-consent?token=${encodeURIComponent(token)}`);
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Link ungültig');
-        setPreview(data);
-        setState('preview');
-      } catch (err) {
-        setError(err.message);
-        setState('error');
-      }
-    };
-
     loadPreview();
   }, [token]);
 
+  const loadPreview = async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/auth/parent-consent?token=${encodeURIComponent(token)}`
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Dieser Link ist ungültig oder abgelaufen.');
+      }
+
+      setChildName(data.childName);
+      setParentEmail(data.parentEmail);
+      setStatus('preview');
+    } catch (err) {
+      setStatus('error');
+      setError(err.message);
+    }
+  };
+
   const handleConfirm = async () => {
-    setState('confirming');
+    setStatus('confirming');
     setError('');
     try {
       const response = await fetch(`${API_BASE_URL}/auth/parent-consent/confirm`, {
@@ -49,78 +59,97 @@ export default function ParentConsentPage() {
         body: JSON.stringify({ token })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Bestätigung fehlgeschlagen');
-      setState('confirmed');
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Bestätigung fehlgeschlagen');
+      }
+
+      setStatus('confirmed');
     } catch (err) {
+      setStatus('error');
       setError(err.message);
-      setState('error');
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-canvas via-primary-light/20 to-canvas flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-md animate-fadeInUp">
-        <div className="flex justify-center mb-8">
-          <LogoWithText size={48} textClassName="text-3xl" />
+    <div className="min-h-screen bg-canvas flex items-center justify-center px-4 py-8">
+      <div className="max-w-md w-full">
+        <div className="flex items-center justify-center gap-3 mb-8">
+          <Logo size={36} />
+          <h1 className="font-display text-2xl font-bold text-gray-900">Kapiert</h1>
         </div>
 
-        <div className="bg-cream border border-gray-100 rounded-lg p-8 shadow-lg text-center">
-          {state === 'loading' && (
-            <p className="text-gray-500">Link wird geprüft…</p>
+        <div className="bg-cream border border-gray-100 rounded-lg p-8 shadow-sm text-center">
+          {status === 'loading' && (
+            <div className="py-8">
+              <Clock size={32} className="mx-auto mb-4 text-gray-400 animate-spin" />
+              <p className="text-gray-600">Link wird geprüft…</p>
+            </div>
           )}
 
-          {state === 'error' && (
-            <>
-              <h2 className="font-display text-2xl font-bold text-gray-900 mb-3">
-                Das hat nicht geklappt
+          {status === 'preview' && (
+            <div>
+              <h2 className="font-display text-xl font-bold text-gray-900 mb-3">
+                Elternzustimmung erforderlich
               </h2>
-              <p className="text-error-dark bg-error-light border border-error/30 rounded-md px-4 py-3 text-sm mb-6">
-                {error}
+              <p className="text-gray-600 text-sm mb-6">
+                <strong>{childName}</strong> hat sich bei Kapiert registriert. Da{' '}
+                {childName ? childName.split(' ')[0] : 'das Kind'} unter 16 Jahre alt ist,
+                benötigen wir gemäß Art. 8 DSGVO deine Zustimmung als Erziehungsberechtigte(r),
+                bevor das Konto genutzt werden kann.
               </p>
-              <Link to="/" className="text-primary font-medium hover:text-primary-dark text-sm">
-                Zurück zum Login →
-              </Link>
-            </>
-          )}
-
-          {state === 'preview' && preview && (
-            <>
-              <h2 className="font-display text-2xl font-bold text-gray-900 mb-3">
-                Zustimmung zur Registrierung
-              </h2>
-              <p className="text-gray-600 mb-6">
-                <strong>{preview.childName}</strong> möchte Kapiert? nutzen. Da die Nutzerin/der Nutzer
-                unter 16 Jahre alt ist, ist dafür laut Art. 8 DSGVO deine Zustimmung als
-                Erziehungsberechtigte:r erforderlich.
+              <p className="text-xs text-gray-500 mb-6">
+                Diese Anfrage wurde an {parentEmail} gesendet.
               </p>
               <button
                 onClick={handleConfirm}
-                className="w-full h-11 bg-primary hover:bg-primary-dark text-white font-semibold rounded-md shadow-md hover:shadow-lg transition-all"
+                className="w-full bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold transition"
               >
-                Ich stimme der Nutzung zu
+                Zustimmung erteilen
               </button>
-            </>
+            </div>
           )}
 
-          {state === 'confirming' && (
-            <p className="text-gray-500">Wird bestätigt…</p>
+          {status === 'confirming' && (
+            <div className="py-8">
+              <Clock size={32} className="mx-auto mb-4 text-gray-400 animate-spin" />
+              <p className="text-gray-600">Wird bestätigt…</p>
+            </div>
           )}
 
-          {state === 'confirmed' && (
-            <>
-              <h2 className="font-display text-2xl font-bold text-gray-900 mb-3">
-                Danke! ✅
+          {status === 'confirmed' && (
+            <div>
+              <CheckCircle size={48} className="mx-auto mb-4 text-success" />
+              <h2 className="font-display text-xl font-bold text-gray-900 mb-3">
+                Zustimmung erteilt!
               </h2>
-              <p className="text-gray-600 mb-6">
-                Das Konto ist jetzt freigeschaltet. Das Kind kann sich ab sofort ganz normal einloggen.
+              <p className="text-gray-600 text-sm mb-6">
+                Vielen Dank. Das Konto von {childName} ist jetzt freigeschaltet und kann
+                verwendet werden.
               </p>
               <Link
                 to="/"
-                className="inline-block w-full h-11 leading-[2.75rem] bg-primary hover:bg-primary-dark text-white font-semibold rounded-md shadow-md transition-all"
+                className="inline-block bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold transition"
               >
-                Zum Login
+                Zur Anmeldung
               </Link>
-            </>
+            </div>
+          )}
+
+          {status === 'error' && (
+            <div>
+              <XCircle size={48} className="mx-auto mb-4 text-error" />
+              <h2 className="font-display text-xl font-bold text-gray-900 mb-3">
+                Link ungültig
+              </h2>
+              <div className="flex items-start gap-2 text-left bg-error-light border border-error/20 rounded-md p-4 mb-4">
+                <AlertTriangle size={18} className="text-error-dark flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-error-dark">{error}</p>
+              </div>
+              <p className="text-xs text-gray-500">
+                Falls der Link abgelaufen ist, muss sich das Kind erneut registrieren.
+              </p>
+            </div>
           )}
         </div>
       </div>

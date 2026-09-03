@@ -8,12 +8,20 @@ const {
   findSubmissionById
 } = require('../store');
 const authCheck = require('../middleware/authCheck');
+const asyncHandler = require('../utils/asyncHandler');
 
 // ✅ Sicherheitsaudit Befund 10: es gibt hier keinen "Mock-Modus"-Zweig mehr
 // (vorher: usingMockMode-Flag + eine separate, nur lokal im Prozess
 // gehaltene mockSubmissions-Map). Alles läuft jetzt ausschließlich über
 // store.js gegen die echte Datenbank (Supabase/Postgres) - Daten bleiben
 // deshalb auch nach einem Server-Neustart erhalten.
+//
+// ✅ Sicherheitsaudit Hoch #9: alle async Routen hier sind zusätzlich mit
+// asyncHandler() umschlossen (siehe utils/asyncHandler.js) - das
+// try/catch in jeder Route bleibt bestehen (eigene deutsche
+// Fehlermeldungen), asyncHandler ist das Sicherheitsnetz für alles
+// Unerwartete, das sonst zu einem Server-Absturz für alle Nutzer führen
+// würde statt nur zu einem 500er für diese eine Anfrage.
 
 // ---- Mock-Testgenerierung ----
 // Platzhalter, bis eine echte KI-Generierung aus dem Dokumenttext sicher
@@ -55,7 +63,7 @@ function generateMockTest(sourceId) {
 }
 
 // ✅ POST /api/processing/sources/:sourceId/process - Verarbeitung starten
-router.post('/sources/:sourceId/process', authCheck, async (req, res) => {
+router.post('/sources/:sourceId/process', authCheck, asyncHandler(async (req, res) => {
   try {
     const sourceId = parseInt(req.params.sourceId, 10);
     const source = await findSourceById(sourceId);
@@ -69,7 +77,10 @@ router.post('/sources/:sourceId/process', authCheck, async (req, res) => {
     // Simuliert einen laufenden Verarbeitungsschritt (wie vorher), nur dass
     // jetzt bei jedem Fortschrittsschritt die Datenbank aktualisiert wird
     // statt nur ein In-Memory-Objekt zu mutieren - so übersteht der Zustand
-    // auch einen Server-Neustart mitten in der "Verarbeitung".
+    // auch einen Server-Neustart mitten in der "Verarbeitung". Läuft
+    // außerhalb des Request/Response-Zyklus, deshalb hier weiterhin ein
+    // eigenes try/catch statt asyncHandler (der wirkt nur auf die direkte
+    // Route-Funktion, nicht auf einen später auslösenden Timer).
     const steps = [30, 60, 90, 100];
     let i = 0;
     const interval = setInterval(async () => {
@@ -97,10 +108,10 @@ router.post('/sources/:sourceId/process', authCheck, async (req, res) => {
     console.error('Fehler beim Start der Verarbeitung:', error);
     res.status(500).json({ error: 'Verarbeitung konnte nicht gestartet werden' });
   }
-});
+}));
 
 // ✅ GET /api/processing/sources/:sourceId/status - Verarbeitungsstatus abfragen
-router.get('/sources/:sourceId/status', authCheck, async (req, res) => {
+router.get('/sources/:sourceId/status', authCheck, asyncHandler(async (req, res) => {
   try {
     const sourceId = parseInt(req.params.sourceId, 10);
     const source = await findSourceById(sourceId);
@@ -118,10 +129,10 @@ router.get('/sources/:sourceId/status', authCheck, async (req, res) => {
     console.error('Fehler beim Abfragen des Verarbeitungsstatus:', error);
     res.status(500).json({ error: 'Status konnte nicht abgefragt werden' });
   }
-});
+}));
 
 // ✅ GET /api/processing/sources/:sourceId/tests - Generierten Test abrufen
-router.get('/sources/:sourceId/tests', authCheck, async (req, res) => {
+router.get('/sources/:sourceId/tests', authCheck, asyncHandler(async (req, res) => {
   try {
     const sourceId = parseInt(req.params.sourceId, 10);
     const source = await findSourceById(sourceId);
@@ -135,7 +146,7 @@ router.get('/sources/:sourceId/tests', authCheck, async (req, res) => {
     console.error('Fehler beim Abrufen des Tests:', error);
     res.status(500).json({ error: 'Test konnte nicht abgerufen werden' });
   }
-});
+}));
 
 // ✅ POST /api/processing/tests/:testId/submit - Test einreichen
 //
@@ -144,7 +155,7 @@ router.get('/sources/:sourceId/tests', authCheck, async (req, res) => {
 // Verarbeitungs-Schritt gespeicherten richtigen Antworten
 // (source.test.questions) berechnet - unverändert gegenüber vorher, nur
 // dass die Source jetzt aus der echten Datenbank kommt.
-router.post('/tests/:testId/submit', authCheck, async (req, res) => {
+router.post('/tests/:testId/submit', authCheck, asyncHandler(async (req, res) => {
   try {
     const { testId } = req.params;
     const userId = req.user.id;
@@ -208,7 +219,7 @@ router.post('/tests/:testId/submit', authCheck, async (req, res) => {
       details: error.message
     });
   }
-});
+}));
 
 // GET /api/processing/tests/:testId - Test laden
 //
@@ -239,7 +250,7 @@ router.get('/tests/:testId', authCheck, (req, res) => {
 });
 
 // ✅ GET /api/processing/submissions - Alle Tests des Benutzers
-router.get('/submissions', authCheck, async (req, res) => {
+router.get('/submissions', authCheck, asyncHandler(async (req, res) => {
   try {
     const userId = req.user.id;
     const rows = await findSubmissionsByUser(userId);
@@ -266,10 +277,10 @@ router.get('/submissions', authCheck, async (req, res) => {
       details: error.message
     });
   }
-});
+}));
 
 // ✅ GET /api/processing/submissions/:submissionId - Einzelne Submission
-router.get('/submissions/:submissionId', authCheck, async (req, res) => {
+router.get('/submissions/:submissionId', authCheck, asyncHandler(async (req, res) => {
   try {
     const { submissionId } = req.params;
     const userId = req.user.id;
@@ -301,6 +312,6 @@ router.get('/submissions/:submissionId', authCheck, async (req, res) => {
       details: error.message
     });
   }
-});
+}));
 
 module.exports = router;

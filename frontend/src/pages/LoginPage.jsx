@@ -30,8 +30,15 @@ export default function LoginPage({ onLoginSuccess }) {
 
     setLoading(true);
     try {
+      // ✅ Sicherheitsaudit Mittel #16 (JWT in localStorage): kein
+      // localStorage.setItem('token', ...) mehr - der Server setzt das
+      // Token jetzt als httpOnly-Cookie direkt in dieser Antwort (siehe
+      // backend/src/server.js). "credentials: 'include'" ist nötig, damit
+      // der Browser dieses Set-Cookie überhaupt annimmt/mitschickt, auch
+      // wenn Frontend und Backend auf unterschiedlichen Domains laufen.
       const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
@@ -39,10 +46,8 @@ export default function LoginPage({ onLoginSuccess }) {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Login fehlgeschlagen');
 
-      localStorage.setItem('token', data.token);
-
       if (onLoginSuccess) {
-        onLoginSuccess(data.user, data.token);
+        onLoginSuccess(data.user);
       } else {
         navigate('/');
       }
@@ -64,59 +69,48 @@ export default function LoginPage({ onLoginSuccess }) {
           <h2 className="font-display text-2xl font-bold text-gray-900 mb-1 text-center">
             Willkommen zurück!
           </h2>
-          <p className="text-gray-500 text-center mb-6">Dein cleverer Lern-Partner</p>
+          <p className="text-gray-500 text-center text-sm mb-6">
+            Gib deine Zugangsdaten ein
+          </p>
 
           {error && (
-            <div
-              role="alert"
-              className="bg-error-light border border-error/30 text-error-dark text-sm px-4 py-3 rounded-md mb-4"
-            >
+            <div className="bg-error-light border border-error text-error-dark text-sm p-3 rounded-md mb-4">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-            <div>
-              <label htmlFor="login-email" className="sr-only">Email</label>
-              <input
-                id="login-email"
-                type="email"
-                name="email"
-                placeholder="Email"
-                autoComplete="email"
-                value={email}
-                onChange={handleChange}
-                aria-describedby={error ? 'login-error' : undefined}
-                className="w-full h-11 bg-white text-gray-900 placeholder-gray-400 px-4 rounded-md border border-gray-300 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition"
-              />
-            </div>
-            <div>
-              <label htmlFor="login-password" className="sr-only">Passwort</label>
-              <input
-                id="login-password"
-                type="password"
-                name="password"
-                placeholder="Passwort"
-                autoComplete="current-password"
-                value={password}
-                onChange={handleChange}
-                aria-describedby={error ? 'login-error' : undefined}
-                className="w-full h-11 bg-white text-gray-900 placeholder-gray-400 px-4 rounded-md border border-gray-300 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition"
-              />
-            </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input
+              type="email"
+              name="email"
+              value={email}
+              onChange={handleChange}
+              placeholder="E-Mail-Adresse"
+              className="w-full h-11 px-4 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+              required
+            />
+            <input
+              type="password"
+              name="password"
+              value={password}
+              onChange={handleChange}
+              placeholder="Passwort"
+              className="w-full h-11 px-4 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+              required
+            />
             <button
               type="submit"
               disabled={loading}
-              className="w-full h-11 bg-primary hover:bg-primary-dark disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold rounded-md shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all"
+              className="w-full bg-primary hover:bg-primary-dark text-white font-semibold rounded-md py-2.5 transition disabled:opacity-60"
             >
               {loading ? 'Wird angemeldet…' : 'Anmelden'}
             </button>
           </form>
 
-          <p className="text-gray-500 text-center mt-6 text-sm">
+          <p className="text-center text-gray-500 text-sm mt-6">
             Noch kein Konto?{' '}
-            <Link to="/register" className="text-primary font-medium hover:text-primary-dark">
-              Registrieren →
+            <Link to="/register" className="text-primary hover:underline font-semibold">
+              Jetzt registrieren
             </Link>
           </p>
         </div>

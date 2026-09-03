@@ -1,174 +1,146 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
+import { ArrowLeft, Clock, CheckCircle, AlertTriangle, Play } from 'lucide-react';
+import Logo from '../components/Logo';
 import { API_BASE_URL } from '../config/api';
+
+// Verfolgt den Verarbeitungsfortschritt EINER hochgeladenen Aufgabe
+// (Route: /processing/:sourceId). Startet die Verarbeitung und pollt den
+// Fortschritt, bis der generierte Test bereit ist.
 
 export default function ProcessingPage() {
   const navigate = useNavigate();
   const { sourceId } = useParams();
+  const pollRef = useRef(null);
 
-  const [status, setStatus] = useState('processing');
+  const [status, setStatus] = useState('pending'); // pending | processing | completed | error
   const [progress, setProgress] = useState(0);
-  const [message, setMessage] = useState('Wird verarbeitet...');
-  const [started, setStarted] = useState(false);
+  const [currentJob, setCurrentJob] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!sourceId) {
-      navigate('/');
-      return;
-    }
-
-    // STEP 1: START PROCESSING
-    const startProcessing = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) {
-          console.error('Kein Token!');
-          setStatus('error');
-          return;
-        }
-
-        console.log(`📝 Starte POST /process für Source ${sourceId}`);
-
-        const response = await fetch(
-          `${API_BASE_URL}/processing/sources/${sourceId}/process`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('✅ Processing started:', data);
-        setStarted(true);
-      } catch (error) {
-        console.error('❌ Start Error:', error);
-        setStatus('error');
-        setMessage(error.message);
-      }
-    };
-
-    // STEP 2: CHECK STATUS EVERY 2 SECONDS
-    const checkStatus = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) return;
-
-        const response = await fetch(
-          `${API_BASE_URL}/processing/sources/${sourceId}/status`,
-          {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('✅ Status:', data.status, 'Progress:', data.progress);
-
-        setStatus(data.status || 'processing');
-        setProgress(data.progress || 0);
-        setMessage(data.current_job || 'Wird verarbeitet...');
-
-        // Wenn fertig - redirect
-        if (data.status === 'completed') {
-          console.log('✅ DONE! Redirect zu /test/' + sourceId);
-          setTimeout(() => {
-            navigate(`/test/${sourceId}`);
-          }, 1000);
-        }
-      } catch (error) {
-        console.error('❌ Status Error:', error);
-      }
-    };
-
-    // Start processing sofort
     startProcessing();
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [sourceId]);
 
-    // Status checken alle 2 Sekunden (nach starten)
-    const interval = setInterval(checkStatus, 2000);
+  const startProcessing = async () => {
+    setError('');
+    try {
+      const token = localStorage.getItem('token');
 
-    return () => clearInterval(interval);
-  }, [sourceId, navigate]);
+      // Verarbeitung anstoßen (idempotent genug für dieses Mock-Backend -
+      // ein erneuter Aufruf während bereits verarbeitet wird, ist unschädlich)
+      await fetch(`${API_BASE_URL}/processing/sources/${sourceId}/process`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include'
+      });
+
+      pollStatus();
+      pollRef.current = setInterval(pollStatus, 1000);
+    } catch (err) {
+      setStatus('error');
+      setError('Verarbeitung konnte nicht gestartet werden.');
+    }
+  };
+
+  const pollStatus = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `${API_BASE_URL}/processing/sources/${sourceId}/status`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include'
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Status konnte nicht abgerufen werden');
+      }
+
+      const data = await response.json();
+      setStatus(data.status);
+      setProgress(data.progress || 0);
+      setCurrentJob(data.current_job || '');
+
+      if (data.status === 'completed' && pollRef.current) {
+        clearInterval(pollRef.current);
+      }
+    } catch (err) {
+      setStatus('error');
+      setError(err.message);
+      if (pollRef.current) clearInterval(pollRef.current);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-canvas flex items-center justify-center px-5">
-      <div className="text-center max-w-md w-full">
-        {(status === 'processing' || status === 'pending') && (
-          <div>
-            <div className="mb-10 flex justify-center">
-              <div
-                className="w-20 h-20 rounded-full border-4 border-gray-200 border-t-primary animate-spin"
-                role="status"
-                aria-label="Wird verarbeitet"
-              />
+    <div className="min-h-screen bg-canvas px-4 py-8">
+      <div className="max-w-2xl mx-auto">
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center gap-2 text-gray-500 hover:text-gray-800 mb-6 text-sm font-medium"
+        >
+          <ArrowLeft size={18} /> Zurück zum Dashboard
+        </button>
+
+        <div className="flex items-center gap-3 mb-8">
+          <Logo size={32} />
+          <h1 className="font-display text-2xl font-bold text-gray-900">
+            Aufgabe wird verarbeitet
+          </h1>
+        </div>
+
+        <div className="bg-white border border-gray-100 rounded-lg p-8 shadow-sm text-center">
+          {error && (
+            <div className="flex items-start gap-3 p-4 bg-error-light border border-error/20 rounded-lg mb-6 text-left">
+              <AlertTriangle size={18} className="text-error-dark flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-error-dark">{error}</p>
             </div>
+          )}
 
-            <h1 className="font-display text-3xl font-bold text-gray-900 mb-4">
-              🔄 Verarbeitung läuft…
-            </h1>
+          {status !== 'completed' && status !== 'error' && (
+            <>
+              <div className="mb-6">
+                <Clock size={48} className="mx-auto text-primary animate-spin" />
+              </div>
+              <p className="font-semibold text-gray-900 mb-1">
+                {currentJob || 'Deine Aufgabe wird analysiert…'}
+              </p>
+              <p className="text-sm text-gray-500 mb-6">
+                Wir erstellen automatisch passende Testfragen. Das dauert nur einen Moment.
+              </p>
 
-            <p className="text-gray-500 mb-8">
-              Dein Test wird mit KI vorbereitet…
-            </p>
+              <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden mb-2">
+                <div
+                  className="h-full bg-primary transition-all duration-500"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-500">{progress}%</p>
+            </>
+          )}
 
-            <div
-              className="bg-gray-200 rounded-lg overflow-hidden h-5 mb-4"
-              role="progressbar"
-              aria-valuenow={progress}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <div
-                className="h-full bg-gradient-to-r from-primary to-success rounded-lg transition-all duration-400"
-                style={{ width: `${progress}%` }}
-              />
+          {status === 'completed' && (
+            <div>
+              <CheckCircle size={48} className="mx-auto mb-4 text-success" />
+              <p className="font-semibold text-gray-900 mb-1">Verarbeitung abgeschlossen!</p>
+              <p className="text-sm text-gray-500 mb-6">
+                Deine Testfragen sind bereit.
+              </p>
+              <Link
+                to={`/test/${sourceId}`}
+                className="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold transition"
+              >
+                <Play size={18} />
+                Test starten
+              </Link>
             </div>
-
-            <div className="flex justify-between text-gray-500 text-sm mb-6">
-              <span>{progress}%</span>
-              <span>{message}</span>
-            </div>
-
-            <div className="bg-primary-light/40 border border-primary/20 rounded-md p-4 text-gray-700 text-sm text-left">
-              💡 Dies kann einige Minuten dauern – bitte nicht schließen!
-            </div>
-          </div>
-        )}
-
-        {status === 'completed' && (
-          <div>
-            <div className="mb-10 text-8xl animate-bounceIn">✅</div>
-            <h1 className="font-display text-3xl font-bold text-gray-900 mb-4">Fertig! 🎉</h1>
-            <p className="text-gray-500 mb-6">Dein Test ist bereit – wird geladen…</p>
-          </div>
-        )}
-
-        {status === 'error' && (
-          <div>
-            <div className="mb-10 text-8xl">❌</div>
-            <h1 className="font-display text-3xl font-bold text-gray-900 mb-4">Fehler!</h1>
-            <p className="text-error-dark mb-6">{message}</p>
-            <button
-              onClick={() => navigate('/upload')}
-              className="w-full bg-primary hover:bg-primary-dark text-white font-semibold py-3 rounded-md shadow-md transition"
-            >
-              Zurück zum Upload
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

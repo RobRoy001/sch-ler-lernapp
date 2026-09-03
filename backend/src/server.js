@@ -9,14 +9,18 @@ const { JWT_SECRET } = require('./config/jwt');
 const { sendParentConsentEmail } = require('./config/email');
 const { calculateAge } = require('./utils/age');
 const authCheck = require('./middleware/authCheck');
+const { setAuthCookie, clearAuthCookie } = require('./utils/cookies');
 const { apiLimiter, authLimiter } = require('./middleware/rateLimiter');
 const { query } = require('./database/connection');
 const {
   createUser,
   findUserByEmail,
   findUserById,
+  findUserWithPasswordById,
   findUserByConsentToken,
-  updateUser
+  updateUser,
+  exportUserData,
+  deleteUser
 } = require('./store');
 const processingRouter = require('./routes/processing');
 const contentRouter = require('./routes/content');
@@ -50,8 +54,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// ✅ Health Check - bewusst VOR dem Rate Limiter definiert, damit Monitoring/
-// Uptime-Checks nie mit ausgebremst werden.
+// ✅ Health Check - bewusst VOR dem Rate Limiter definiert
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -61,19 +64,10 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ✅ Rate Limiting (Sicherheitsaudit Hoch #7) - allgemeiner Basisschutz für
-// alle übrigen /api-Routen gegen groben DoS/Missbrauch.
+// ✅ Rate Limiting (Sicherheitsaudit Hoch #7)
 app.use('/api', apiLimiter);
 
 // ✅ Login Endpoint - echte Passwortprüfung (Sicherheitsaudit Kritisch #2)
-//
-// Vorher: es wurde nur geprüft, ob email/password überhaupt gesetzt waren,
-// dann ein unsigniertes Base64-Token für JEDE beliebige Email ausgestellt -
-// egal ob dieser Account existierte. Jeder konnte sich als jeder ausgeben.
-//
-// authLimiter zusätzlich zum globalen apiLimiter: Login ist der wichtigste
-// Brute-Force-Angriffspunkt der ganzen App, deshalb hier zusätzlich das
-// strengere Limit (5 Versuche / 15 Minuten statt 200).
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -87,17 +81,13 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Email oder Passwort falsch' });
     }
 
-    const validPassword = await bcrypt.compare(password, user.passwordHash);
+    const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
       return res.status(401).json({ error: 'Email oder Passwort falsch' });
     }
 
-    // ✅ Sicherheitsaudit Kritisch #5 (Art. 8 DSGVO): ein Konto unter 16
-    // bleibt gesperrt, bis ein Elternteil über den Bestätigungslink
-    // zugestimmt hat. Ohne diesen Check könnte man sich zwar registrieren,
-    // aber trotzdem sofort einloggen und die App nutzen - genau das, was
-    // die Elternzustimmung eigentlich verhindern soll.
-    if (user.accountStatus === 'pending_parent_consent') {
+    // ✅ Sicherheitsaudit Kritisch #5 (Art. 8 DSGVO)
+    if (user.account_status === 'pending_parent_consent') {
       return res.status(403).json({
         error: 'Dieses Konto wartet noch auf die Zustimmung eines Erziehungsberechtigten.',
         pendingParentConsent: true
@@ -105,11 +95,13 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     }
 
     const token = generateToken(user);
+    // ✅ Sicherheitsaudit Mittel #16: Token im httpOnly-Cookie statt localStorage
+    setAuthCookie(res, token);
 
     return res.json({
       success: true,
       message: 'Login erfolgreich',
-      token,
+      token, // bleibt zusätzlich im Body für curl/Postman-Tests, Frontend nutzt das Cookie
       user: publicUser(user)
     });
   } catch (error) {
@@ -118,18 +110,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   }
 });
 
-// ✅ Register Endpoint - Passwort wird jetzt tatsächlich gehasht und der
-// Nutzer gespeichert (jetzt in einer echten Datenbank - Sicherheitsaudit
-// Befund 10 -, nicht mehr nur In-Memory).
-//
-// ✅ Sicherheitsaudit Kritisch #5 (Art. 8 DSGVO): Geburtsdatum ist jetzt
-// Pflicht. Bei unter 16-Jährigen wird KEIN nutzbares Konto angelegt, bevor
-// nicht ein Elternteil über einen Bestätigungslink zugestimmt hat - vorher
-// gab es überhaupt keine Altersprüfung und Kinder konnten sich direkt und
-// sofort nutzbar registrieren.
-//
-// authLimiter auch hier: verhindert automatisiertes Massen-Anlegen von
-// Konten (Spam-Registrierungen).
+// ✅ Register Endpoint (Sicherheitsaudit Kritisch #5)
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { email, password, name, grade_level, date_of_birth, parent_email } = req.body;
@@ -165,7 +146,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 
       await createUser({
         email,
-        passwordHash,
+        password: passwordHash,
         name,
         grade_level,
         dateOfBirth: date_of_birth,
@@ -177,21 +158,24 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       });
 
       const consentUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/parent-consent?token=${consentToken}`;
-      await sendParentConsentEmail(parent_email, consentUrl, name);
+      try {
+        await sendParentConsentEmail(parent_email, consentUrl, name);
+      } catch (emailError) {
+        console.error('Parent-Consent-Email konnte nicht gesendet werden:', emailError.message);
+        // Registrierung bleibt trotzdem erfolgreich - der Consent-Link
+        // funktioniert auch ohne die Email (z.B. manuell weitergegeben).
+      }
 
-      // Bewusst 202 (Accepted) statt 201: das Konto existiert, ist aber noch
-      // nicht nutzbar. Kein token im Response - ein Login ist erst nach
-      // erteilter Zustimmung möglich (siehe Login-Endpoint oben).
       return res.status(202).json({
         success: true,
         pendingParentConsent: true,
-        message: 'Registrierung erfasst. Ein Erziehungsberechtigter muss der Nutzung noch zustimmen - wir haben dafür eine Email mit einem Bestätigungslink verschickt.'
+        message: 'Registrierung erfasst. Ein Erziehungsberechtigter muss der Nutzung noch zustimmen.'
       });
     }
 
     const user = await createUser({
       email,
-      passwordHash,
+      password: passwordHash,
       name,
       grade_level,
       dateOfBirth: date_of_birth,
@@ -199,6 +183,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       accountStatus: 'active'
     });
     const token = generateToken(user);
+    setAuthCookie(res, token);
 
     return res.status(201).json({
       success: true,
@@ -212,11 +197,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   }
 });
 
-// ✅ Elternzustimmung - Vorschau (Sicherheitsaudit Kritisch #5)
-//
-// Wird von der Bestätigungsseite aufgerufen, BEVOR der Elternteil klickt,
-// damit dort angezeigt werden kann, für wen genau zugestimmt wird - ohne
-// dass dieser Aufruf selbst schon etwas verändert.
+// ✅ Elternzustimmung - Vorschau
 app.get('/api/auth/parent-consent', async (req, res) => {
   const { token } = req.query;
   if (!token) {
@@ -224,25 +205,21 @@ app.get('/api/auth/parent-consent', async (req, res) => {
   }
 
   const user = await findUserByConsentToken(token);
-  if (!user || user.accountStatus !== 'pending_parent_consent') {
+  if (!user || user.account_status !== 'pending_parent_consent') {
     return res.status(404).json({ error: 'Dieser Link ist ungültig oder wurde bereits verwendet' });
   }
 
-  if (new Date(user.parentConsentExpires) < new Date()) {
+  if (new Date(user.parent_consent_expires) < new Date()) {
     return res.status(410).json({ error: 'Dieser Link ist abgelaufen. Bitte erneut registrieren.' });
   }
 
   return res.json({
     childName: user.name,
-    parentEmail: user.parentEmail
+    parentEmail: user.parent_email
   });
 });
 
-// ✅ Elternzustimmung - Bestätigung (Sicherheitsaudit Kritisch #5)
-//
-// Schaltet das Konto frei: accountStatus wird 'active', ageVerified true,
-// der Einmal-Token wird sofort entwertet (kein erneutes Einlösen möglich).
-// Erst danach ist ein Login für dieses Konto überhaupt möglich.
+// ✅ Elternzustimmung - Bestätigung
 app.post('/api/auth/parent-consent/confirm', async (req, res) => {
   try {
     const { token } = req.body;
@@ -251,11 +228,11 @@ app.post('/api/auth/parent-consent/confirm', async (req, res) => {
     }
 
     const user = await findUserByConsentToken(token);
-    if (!user || user.accountStatus !== 'pending_parent_consent') {
+    if (!user || user.account_status !== 'pending_parent_consent') {
       return res.status(404).json({ error: 'Dieser Link ist ungültig oder wurde bereits verwendet' });
     }
 
-    if (new Date(user.parentConsentExpires) < new Date()) {
+    if (new Date(user.parent_consent_expires) < new Date()) {
       return res.status(410).json({ error: 'Dieser Link ist abgelaufen. Bitte erneut registrieren.' });
     }
 
@@ -277,9 +254,7 @@ app.post('/api/auth/parent-consent/confirm', async (req, res) => {
   }
 });
 
-// ✅ Profile Endpoint - wird von App.jsx beim Laden aufgerufen, um ein
-// bestehendes Token zu prüfen. Existierte vorher gar nicht (404 bei jedem
-// Seiten-Reload mit vorhandenem Token -> sofortiger Logout).
+// ✅ Profile Endpoint
 app.get('/api/auth/profile', authCheck, async (req, res) => {
   const user = await findUserById(req.user.id);
   if (!user) {
@@ -288,14 +263,13 @@ app.get('/api/auth/profile', authCheck, async (req, res) => {
   return res.json(publicUser(user));
 });
 
-// ✅ Logout Endpoint - bei JWTs zustandslos (Client löscht das Token)
+// ✅ Logout Endpoint
 app.post('/api/auth/logout', (req, res) => {
+  clearAuthCookie(res);
   res.json({ message: 'Logout erfolgreich' });
 });
 
-// ✅ Refresh Token Endpoint - verifiziert das bestehende Token und stellt
-// bei Gültigkeit ein neues aus, statt (wie vorher) einen bedeutungslosen
-// Platzhalter-String zurückzugeben.
+// ✅ Refresh Token Endpoint
 app.post('/api/auth/refresh-token', async (req, res) => {
   try {
     const { token } = req.body;
@@ -309,19 +283,76 @@ app.post('/api/auth/refresh-token', async (req, res) => {
       return res.status(401).json({ error: 'Nutzer nicht gefunden' });
     }
 
+    const newToken = generateToken(user);
+    setAuthCookie(res, newToken);
+
     return res.json({
       success: true,
-      token: generateToken(user)
+      token: newToken
     });
   } catch (error) {
     return res.status(401).json({ error: 'Token ungültig oder abgelaufen' });
   }
 });
 
-// ✅ Content Routes (Upload, Sources, Bücherkatalog)
+// ✅ Datenexport - Art. 20 DSGVO
+app.get('/api/auth/export-data', authCheck, async (req, res) => {
+  try {
+    const data = await exportUserData(req.user.id);
+    if (!data) {
+      return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+    }
+
+    const exportPayload = {
+      export_date: new Date().toISOString(),
+      ...data
+    };
+
+    const filename = `kapiert-meine-daten-${new Date().toISOString().split('T')[0]}.json`;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(JSON.stringify(exportPayload, null, 2));
+  } catch (error) {
+    console.error('Export Error:', error);
+    res.status(500).json({ error: 'Datenexport fehlgeschlagen' });
+  }
+});
+
+// ✅ Kontolöschung - Art. 17 DSGVO
+app.delete('/api/auth/account', authLimiter, authCheck, async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ error: 'Passwort zur Bestätigung erforderlich' });
+    }
+
+    const user = await findUserWithPasswordById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Passwort falsch' });
+    }
+
+    await deleteUser(user.id);
+    clearAuthCookie(res);
+
+    return res.json({
+      success: true,
+      message: 'Konto und alle zugehörigen Daten wurden gelöscht.'
+    });
+  } catch (error) {
+    console.error('Account Deletion Error:', error);
+    return res.status(500).json({ error: 'Konto konnte nicht gelöscht werden' });
+  }
+});
+
+// ✅ Content Routes
 app.use('/api/content', contentRouter);
 
-// ✅ Processing Routes (Tests + Scoring) - FIX #2
+// ✅ Processing Routes
 app.use('/api/processing', processingRouter);
 
 // 404 Handler
@@ -346,23 +377,9 @@ const PORT = process.env.PORT || 5000;
 
 if (require.main === module) {
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`
-╔════════════════════════════════════════╗
-║        🚀 LernApp Server Started       ║
-╠════════════════════════════════════════╣
-║ Port: ${PORT}
-║ Environment: ${process.env.NODE_ENV || 'development'}
-║ Status: Running ✅
-║ Auth: Ready (echte DB)
-║ Processing: Ready (FIX #2)
-╚════════════════════════════════════════╝
-    `);
+    console.log(`\n╔════════════════════════════════════════╗\n║        🚀 LernApp Server Started       ║\n╠════════════════════════════════════════╣\n║ Port: ${PORT}\n║ Environment: ${process.env.NODE_ENV || 'development'}\n║ Status: Running ✅\n║ Auth: Ready (echte DB)\n║ Processing: Ready\n╚════════════════════════════════════════╝\n    `);
   });
 
-  // Kurzer Verbindungstest zur echten Datenbank (Supabase/Postgres) - rein
-  // informativ, damit man sofort in der Konsole sieht, ob DATABASE_URL
-  // funktioniert, statt erst beim ersten Login/Register einen Fehler zu
-  // bekommen (Sicherheitsaudit Befund 10).
   query('SELECT 1')
     .then(() => console.log('✅ Datenbankverbindung erfolgreich (Supabase/Postgres).'))
     .catch((err) => console.error('❌ Datenbankverbindung fehlgeschlagen - DATABASE_URL in backend/.env prüfen:', err.message));

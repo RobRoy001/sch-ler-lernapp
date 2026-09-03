@@ -1,324 +1,350 @@
-import React, { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, CheckCircle, XCircle, AlertTriangle, RotateCcw } from 'lucide-react';
+import Logo from '../components/Logo';
 import { API_BASE_URL } from '../config/api';
 
-// MultipleChoice Component
-function MultipleChoiceQuestion({ question, answer, onAnswer }) {
-  let options = [];
-  try {
-    if (typeof question.options === 'string') {
-      options = JSON.parse(question.options);
-    } else if (Array.isArray(question.options)) {
-      options = question.options;
-    }
-  } catch (e) {
-    console.error('Error parsing options:', e);
-    options = [];
-  }
+// Hinweis: im aktuellen Backend (processing.js, Mock-Testgenerierung)
+// entspricht die Test-Id der Source-Id - ein Test wird also über
+// GET /processing/sources/:sourceId/tests geladen und über
+// POST /processing/tests/:testId/submit (testId === sourceId) eingereicht.
 
-  return (
-    <div className="mb-6">
-      <h3 className="font-display text-lg font-semibold text-gray-900 mb-4">
-        {question.question_text}
-      </h3>
-      <div>
-        {options.map((option, idx) => (
-          <label
-            key={idx}
-            className={`block mb-3 cursor-pointer p-3.5 rounded-md border-2 transition ${
-              answer === option
-                ? 'border-primary bg-primary-light/40'
-                : 'border-gray-200 bg-white hover:border-primary/40'
-            }`}
-          >
-            <input
-              type="radio"
-              name={`question-${question.id}`}
-              value={option}
-              checked={answer === option}
-              onChange={(e) => onAnswer(e.target.value)}
-              className="mr-3 accent-primary cursor-pointer"
-            />
-            <span className="text-gray-800">{option}</span>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// FillGap Component
-function FillGapQuestion({ question, answer, onAnswer }) {
-  return (
-    <div className="mb-6">
-      <h3 className="font-display text-lg font-semibold text-gray-900 mb-4">
-        {question.question_text}
-      </h3>
-      <input
-        type="text"
-        value={answer || ''}
-        onChange={(e) => onAnswer(e.target.value)}
-        placeholder="Antworte hier..."
-        className="w-full h-11 px-4 bg-white border-2 border-gray-200 rounded-md text-gray-900 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition"
-      />
-    </div>
-  );
-}
-
-// Main TestPlayer Component
-export default function TestPlayer() {
+export default function TestPlayer({ user }) {
   const navigate = useNavigate();
   const { sourceId } = useParams();
 
   const [test, setTest] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
+  const [userAnswers, setUserAnswers] = useState({});
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [results, setResults] = useState(null);
+  const [startTime] = useState(Date.now());
 
-  React.useEffect(() => {
-    const fetchTest = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) {
-          navigate('/login');
-          return;
-        }
+  useEffect(() => {
+    loadTest();
+  }, [sourceId]);
 
-        const response = await fetch(
-          `${API_BASE_URL}/processing/sources/${sourceId}/tests`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('Tests loaded:', data);
-
-        if (data.tests && data.tests.length > 0) {
-          setTest(data.tests[0]);
-          const initialAnswers = {};
-          data.tests[0].questions?.forEach(q => {
-            initialAnswers[q.id] = '';
-          });
-          setAnswers(initialAnswers);
-        } else {
-          setError('Kein Test gefunden');
-        }
-      } catch (err) {
-        console.error('Fehler beim Laden:', err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTest();
-  }, [sourceId, navigate]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-canvas flex items-center justify-center text-gray-500">
-        Lädt Test…
-      </div>
-    );
-  }
-
-  if (error || !test) {
-    return (
-      <div className="min-h-screen bg-canvas flex items-center justify-center text-error-dark">
-        Fehler: {error || 'Kein Test geladen'}
-      </div>
-    );
-  }
-
-  const questions = test.questions || [];
-  const currentQuestion = questions[currentQuestionIndex];
-  const currentAnswer = answers[currentQuestion?.id] || '';
-  const progressPct = ((currentQuestionIndex + 1) / questions.length) * 100;
-
-  const handleNext = () => {
-    if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
-    } else {
-      submitTest();
-    }
-  };
-
-  const handleBack = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(currentQuestionIndex - 1);
-    }
-  };
-
-  const getMotivationMessage = (acc) => {
-    if (acc >= 90) return '🏆 Outstanding! Du bist ein Meister!';
-    if (acc >= 70) return '🌟 Sehr gut! Weiter so!';
-    if (acc >= 60) return '💪 Gute Anstrengung! Nächstes Mal wird\'s besser!';
-    return '📚 Weiter üben! Du schaffst das!';
-  };
-
-  const submitTest = async () => {
+  const loadTest = async () => {
+    setLoading(true);
+    setError('');
     try {
       const token = localStorage.getItem('token');
-      const answerArray = questions.map((q, idx) => ({
-        question_id: q.id,
-        answer: answers[q.id] || '',
-        is_correct: checkAnswer(q, answers[q.id])
-      }));
-
-      // Backend verlangt correctCount/totalQuestions/accuracy als Pflichtfelder
-      // (siehe backend/src/routes/processing.js) - vorher wurden nur die
-      // Antworten geschickt, wodurch jeder Submit mit HTTP 400 fehlschlug.
-      const correctCount = answerArray.filter(a => a.is_correct).length;
-      const totalQuestions = questions.length;
-      const accuracy = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
-
-      console.log('Submitting answers:', answerArray, { correctCount, totalQuestions, accuracy });
-
       const response = await fetch(
-        `${API_BASE_URL}/processing/tests/${test.id}/submit`,
+        `${API_BASE_URL}/processing/sources/${sourceId}/tests`,
         {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            answers: answerArray,
-            correctCount,
-            totalQuestions,
-            accuracy,
-            timeTaken: 0
-          })
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include'
         }
       );
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Test konnte nicht geladen werden. Ist die Verarbeitung schon abgeschlossen?');
       }
 
-      const result = await response.json();
-      console.log('Test Result:', result);
+      const data = await response.json();
+      const loadedTest = (data.tests && data.tests[0]) || null;
 
-      // Backend liefert die Werte unter result.submission.* zurück,
-      // nicht result.score/total_points/accuracy_percentage wie vorher angenommen.
-      const sub = result.submission || {};
+      if (loadedTest && Array.isArray(loadedTest.questions)) {
+        // options kommt vom Backend als JSON-String (JSONB Feld) - hier geparst
+        loadedTest.questions = loadedTest.questions.map((q) => ({
+          ...q,
+          options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+        }));
+      }
 
-      navigate(`/results/${test.id}`, {
-        state: {
-          score: sub.correctCount ?? correctCount,
-          totalPoints: sub.totalQuestions ?? totalQuestions,
-          accuracy: sub.accuracy ?? accuracy,
-          message: getMotivationMessage(sub.accuracy ?? accuracy)
-        }
+      setTest(loadedTest);
+
+      const initialAnswers = {};
+      (loadedTest?.questions || []).forEach((q) => {
+        initialAnswers[q.id] = '';
       });
+      setUserAnswers(initialAnswers);
     } catch (err) {
-      console.error('Submit Error:', err);
-      alert('Fehler beim Absenden: ' + err.message);
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const checkAnswer = (question, userAnswer) => {
-    if (!userAnswer) return false;
-    const correctAnswer = question.correct_answer;
-    return userAnswer.toLowerCase().trim() === correctAnswer.toLowerCase().trim();
+  const questions = test?.questions || [];
+  const currentQuestion = questions[currentQuestionIndex];
+  const isLastQuestion = currentQuestionIndex === questions.length - 1;
+  const isFirstQuestion = currentQuestionIndex === 0;
+
+  const handleAnswerChange = (value) => {
+    setUserAnswers(prev => ({
+      ...prev,
+      [currentQuestion.id]: value
+    }));
   };
 
-  return (
-    <div className="min-h-screen bg-canvas py-10 px-5">
-      <div className="max-w-2xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="font-display text-2xl font-bold text-gray-900 mb-1">
-            {test.title}
-          </h1>
-          <p className="text-gray-500 mb-4">
-            {test.total_questions} Fragen • {test.difficulty}
-          </p>
+  const handleNext = () => {
+    if (!isLastQuestion) setCurrentQuestionIndex(prev => prev + 1);
+  };
 
-          {/* Progress Bar */}
-          <div
-            className="bg-gray-200 rounded-lg overflow-hidden h-3 mb-3"
-            role="progressbar"
-            aria-valuenow={Math.round(progressPct)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div
-              className="h-full bg-primary rounded-lg transition-all duration-300"
-              style={{ width: `${progressPct}%` }}
-            />
-          </div>
+  const handlePrevious = () => {
+    if (!isFirstQuestion) setCurrentQuestionIndex(prev => prev - 1);
+  };
 
-          <div className="flex justify-between text-gray-500 text-sm">
-            <span>Frage {currentQuestionIndex + 1} von {questions.length}</span>
-            <span>{Math.round(progressPct)}%</span>
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('token');
+      const timeTaken = Math.round((Date.now() - startTime) / 1000);
+
+      const answers = questions.map((q) => ({
+        question_id: q.id,
+        answer: userAnswers[q.id] || ''
+      }));
+
+      // ✅ Sicherheitsaudit Kritisch #4: die Bewertung passiert serverseitig
+      // (der Client sendet nur die rohen Antworten, nie ein selbst
+      // berechnetes Ergebnis) - siehe backend/src/routes/processing.js
+      const response = await fetch(
+        `${API_BASE_URL}/processing/tests/${sourceId}/submit`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ answers, timeTaken }),
+          credentials: 'include'
+        }
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Test konnte nicht eingereicht werden');
+      }
+
+      setResults({
+        totalQuestions: data.submission.totalQuestions,
+        correctAnswers: data.submission.correctCount,
+        accuracy: data.submission.accuracy
+      });
+      setSubmitted(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-canvas px-4 py-8">
+        <div className="max-w-3xl mx-auto text-center py-12 text-gray-500">
+          <div className="animate-spin mb-4 inline-block">
+            <RotateCcw size={32} />
           </div>
+          <p>Wird geladen…</p>
         </div>
+      </div>
+    );
+  }
 
-        {/* Question */}
-        <div className="bg-cream border border-gray-100 rounded-lg p-6 md:p-8 mb-8 shadow-sm">
-          {currentQuestion && (
+  if (!submitted) {
+    return (
+      <div className="min-h-screen bg-canvas px-4 py-8">
+        <div className="max-w-3xl mx-auto">
+          <button
+            onClick={() => navigate('/processing')}
+            className="flex items-center gap-2 text-gray-500 hover:text-gray-800 mb-6 text-sm font-medium"
+          >
+            <ArrowLeft size={18} /> Zurück
+          </button>
+
+          {error && (
+            <div className="flex items-start gap-3 p-4 bg-error-light border border-error/20 rounded-lg mb-6">
+              <AlertTriangle size={18} className="text-error-dark flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-error-dark">{error}</p>
+            </div>
+          )}
+
+          {questions.length === 0 ? (
+            <div className="bg-white border border-gray-100 rounded-lg p-12 text-center shadow-sm">
+              <AlertTriangle size={32} className="mx-auto mb-4 text-gray-400" />
+              <p className="text-gray-600 font-semibold">Keine Fragen verfügbar</p>
+              <p className="text-sm text-gray-500 mt-2">
+                Diese Aufgabe hat noch keine Fragen. Bitte versuche es später erneut.
+              </p>
+            </div>
+          ) : (
             <>
-              {currentQuestion.type === 'multiple_choice' && (
-                <MultipleChoiceQuestion
-                  question={currentQuestion}
-                  answer={currentAnswer}
-                  onAnswer={(value) => setAnswers({
-                    ...answers,
-                    [currentQuestion.id]: value
-                  })}
-                />
-              )}
-
-              {currentQuestion.type === 'fill_gap' && (
-                <FillGapQuestion
-                  question={currentQuestion}
-                  answer={currentAnswer}
-                  onAnswer={(value) => setAnswers({
-                    ...answers,
-                    [currentQuestion.id]: value
-                  })}
-                />
-              )}
-
-              {currentQuestion.explanation && (
-                <div className="mt-6 p-4 bg-primary-light/30 rounded-md border-l-4 border-primary text-sm text-gray-700">
-                  <strong>Erklärung:</strong> {currentQuestion.explanation}
+              {/* Progress Bar */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold text-gray-900">
+                    Frage {currentQuestionIndex + 1} von {questions.length}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {Math.round(((currentQuestionIndex + 1) / questions.length) * 100)}%
+                  </p>
                 </div>
-              )}
+                <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{
+                      width: `${((currentQuestionIndex + 1) / questions.length) * 100}%`
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Question Card */}
+              <div className="bg-white border border-gray-100 rounded-lg p-8 shadow-sm mb-6">
+                <h2 className="font-display text-xl font-bold text-gray-900 mb-6">
+                  {currentQuestion?.question_text || 'Frage'}
+                </h2>
+
+                {/* Question Type: Multiple Choice */}
+                {currentQuestion?.type === 'multiple_choice' && Array.isArray(currentQuestion?.options) && (
+                  <div className="space-y-3">
+                    {currentQuestion.options.map((option, idx) => (
+                      <label
+                        key={idx}
+                        className={`flex items-center gap-3 p-4 border-2 rounded-lg cursor-pointer transition ${
+                          userAnswers[currentQuestion.id] === option
+                            ? 'border-primary bg-primary/5'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`question_${currentQuestion.id}`}
+                          value={option}
+                          checked={userAnswers[currentQuestion.id] === option}
+                          onChange={(e) => handleAnswerChange(e.target.value)}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-gray-900 font-medium">{option}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                {/* Question Type: Lückentext / Freitext */}
+                {(currentQuestion?.type === 'fill_gap' || currentQuestion?.type === 'short_answer') && (
+                  <div>
+                    <input
+                      type="text"
+                      value={userAnswers[currentQuestion.id]}
+                      onChange={(e) => handleAnswerChange(e.target.value)}
+                      placeholder="Deine Antwort…"
+                      className="w-full h-11 px-4 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      Gib eine kurze Antwort ein
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Navigation Buttons */}
+              <div className="flex gap-3 justify-between">
+                <button
+                  onClick={handlePrevious}
+                  disabled={isFirstQuestion}
+                  className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-6 py-3 rounded-md font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  ← Zurück
+                </button>
+
+                {isLastQuestion ? (
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className="bg-success hover:bg-success-dark text-white px-6 py-3 rounded-md font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {submitting ? 'Wird eingereicht…' : 'Test abschließen ✓'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleNext}
+                    className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold transition"
+                  >
+                    Weiter →
+                  </button>
+                )}
+              </div>
             </>
           )}
         </div>
+      </div>
+    );
+  }
 
-        {/* Navigation */}
-        <div className="flex gap-3 justify-between">
-          <button
-            onClick={handleBack}
-            disabled={currentQuestionIndex === 0}
-            className={`px-6 py-3 rounded-md font-semibold transition ${
-              currentQuestionIndex === 0
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            ← Zurück
-          </button>
+  // Results Screen
+  return (
+    <div className="min-h-screen bg-canvas px-4 py-8">
+      <div className="max-w-3xl mx-auto">
+        <div className="bg-white border border-gray-100 rounded-lg p-8 shadow-sm text-center mb-6">
+          <div className="mb-6">
+            {results.accuracy >= 70 ? (
+              <CheckCircle size={64} className="mx-auto text-success mb-4" />
+            ) : (
+              <XCircle size={64} className="mx-auto text-error mb-4" />
+            )}
+          </div>
 
-          <button
-            onClick={handleNext}
-            className="flex-1 bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold shadow-md hover:shadow-lg transition"
-          >
-            {currentQuestionIndex === questions.length - 1 ? 'Abschließen' : 'Weiter →'}
-          </button>
+          <h2 className="font-display text-3xl font-bold text-gray-900 mb-2">
+            Test abgeschlossen!
+          </h2>
+          <p className="text-gray-600 mb-6">
+            {results.accuracy >= 70
+              ? 'Gute Leistung! Du hast das Thema gut verstanden.'
+              : 'Gutes Lernen! Hier sind Möglichkeiten zur Verbesserung.'}
+          </p>
+
+          {/* Score Display */}
+          <div className="grid grid-cols-3 gap-4 mb-8">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">
+                Richtig
+              </p>
+              <p className="font-display text-3xl font-bold text-success">
+                {results.correctAnswers}
+              </p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">
+                Gesamt
+              </p>
+              <p className="font-display text-3xl font-bold text-gray-900">
+                {results.totalQuestions}
+              </p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">
+                Erfolgsquote
+              </p>
+              <p className="font-display text-3xl font-bold text-primary">
+                {results.accuracy}%
+              </p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => navigate('/processing')}
+              className="flex-1 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-6 py-3 rounded-md font-semibold transition"
+            >
+              Andere Aufgaben
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="flex-1 bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold transition"
+            >
+              Zum Dashboard
+            </button>
+          </div>
         </div>
       </div>
     </div>

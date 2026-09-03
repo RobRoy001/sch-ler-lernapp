@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { createSource, nextFileId } = require('../store');
+const { createSource, nextFileId, findSourcesByUser, findSourceById } = require('../store');
 const authCheck = require('../middleware/authCheck');
+const asyncHandler = require('../utils/asyncHandler');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -29,10 +30,7 @@ router.post('/upload', authCheck, upload.single('file'), (req, res) => {
 });
 
 // POST /api/content/sources
-// ✅ Sicherheitsaudit Befund 10: legt die Source jetzt in der echten
-// Datenbank an (store.js), nicht mehr nur in einer In-Memory-Map - bleibt
-// deshalb auch nach einem Server-Neustart erhalten.
-router.post('/sources', authCheck, async (req, res) => {
+router.post('/sources', authCheck, asyncHandler(async (req, res) => {
   try {
     const { content_type, reference_id, reference_book_id } = req.body;
 
@@ -55,11 +53,48 @@ router.post('/sources', authCheck, async (req, res) => {
     console.error('Fehler beim Anlegen der Content Source:', error);
     res.status(500).json({ error: 'Content Source konnte nicht erstellt werden' });
   }
-});
+}));
+
+// ✅ GET /api/content/sources - alle hochgeladenen Aufgaben des Nutzers
+// (wird von der TasksOverviewPage im Frontend gebraucht). Die sources-
+// Tabelle hat keine eigene title/description Spalte - hier aus
+// content_type + id abgeleitet, statt sie künstlich in der DB zu ergänzen.
+router.get('/sources', authCheck, asyncHandler(async (req, res) => {
+  const sources = await findSourcesByUser(req.user.id);
+
+  res.json({
+    sources: sources.map((s) => ({
+      id: s.id,
+      title: `${s.content_type || 'Aufgabe'} #${s.id}`,
+      description: null,
+      status: s.status,
+      progress: s.progress || 0,
+      question_count: s.test && s.test.questions ? s.test.questions.length : 0,
+      created_at: s.created_at
+    }))
+  });
+}));
+
+// ✅ GET /api/content/sources/:id - Details einer einzelnen Aufgabe
+router.get('/sources/:id', authCheck, asyncHandler(async (req, res) => {
+  const source = await findSourceById(parseInt(req.params.id, 10));
+
+  if (!source || source.user_id !== req.user.id) {
+    return res.status(404).json({ error: 'Aufgabe nicht gefunden' });
+  }
+
+  res.json({
+    source: {
+      id: source.id,
+      title: `${source.content_type || 'Aufgabe'} #${source.id}`,
+      status: source.status,
+      progress: source.progress || 0,
+      created_at: source.created_at
+    }
+  });
+}));
 
 // ---- Platzhalter-Bücherkatalog (statisch, kein DB-Zugriff nötig) ----
-// Ersetzt die alte Version, die eine nie migrierte books_catalog-Tabelle
-// voraussetzte und deshalb immer 500er zurückgab.
 const MOCK_BOOKS = [
   { id: 1, title: 'Mathematik 9', author: 'Klett Verlag', total_pages: 240, grade_level: '9', subject: 'Mathe' },
   { id: 2, title: 'Deutschbuch 9', author: 'Cornelsen', total_pages: 220, grade_level: '9', subject: 'Deutsch' },
