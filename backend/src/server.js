@@ -29,11 +29,16 @@ const {
   findParentByEmail,
   createParentChildLink,
   findParentsByChild,
-  revokeParentChildLink
+  revokeParentChildLink,
+  findClassByCode,
+  createClassMembership,
+  findClassesByStudent
 } = require('./store');
 const processingRouter = require('./routes/processing');
 const contentRouter = require('./routes/content');
 const parentRouter = require('./routes/parent');
+const teacherRouter = require('./routes/teacher');
+const classesRouter = require('./routes/classes');
 
 // Unter diesem Alter ist laut Art. 8 DSGVO eine Elternzustimmung nötig,
 // bevor ein Konto aktiv genutzt werden darf (Sicherheitsaudit Kritisch #5).
@@ -341,6 +346,53 @@ app.delete('/api/auth/parent-links/:parentId', authCheck, async (req, res) => {
   }
 });
 
+// ✅ Lehrer-Portal (2026-09-03): Kind tritt per Klassencode einer Klasse bei
+// (siehe claude/Lehrer-Portal-Konzept-2026-09-03.md Abschnitt 7). Der Code
+// selbst verrät nichts Sensibles (keine IDs, kein Zugriff auf andere Klassen
+// möglich) - jede weitere Aktion prüft die tatsächliche Mitgliedschaft
+// serverseitig (siehe routes/classes.js).
+app.post('/api/auth/join-class', authCheck, async (req, res) => {
+  try {
+    const { class_code } = req.body;
+    if (!class_code || !class_code.trim()) {
+      return res.status(400).json({ error: 'Klassencode erforderlich' });
+    }
+
+    const cls = await findClassByCode(class_code.trim().toUpperCase());
+    if (!cls) {
+      return res.status(404).json({ error: 'Dieser Klassencode wurde nicht gefunden' });
+    }
+
+    await createClassMembership(cls.id, req.user.id);
+
+    return res.json({
+      success: true,
+      class: { id: cls.id, name: cls.name, classCode: cls.class_code }
+    });
+  } catch (error) {
+    console.error('Join Class Error:', error);
+    return res.status(500).json({ error: 'Klasse konnte nicht beigetreten werden' });
+  }
+});
+
+// ✅ Lehrer-Portal: eigene Klassen anzeigen (Einstellungen-Seite)
+app.get('/api/auth/my-classes', authCheck, async (req, res) => {
+  try {
+    const classes = await findClassesByStudent(req.user.id);
+    return res.json({
+      classes: classes.map((c) => ({
+        id: c.id,
+        name: c.name,
+        classCode: c.class_code,
+        joinedAt: c.joined_at
+      }))
+    });
+  } catch (error) {
+    console.error('My Classes Error:', error);
+    return res.status(500).json({ error: 'Klassen konnten nicht geladen werden' });
+  }
+});
+
 // ✅ Profile Endpoint
 app.get('/api/auth/profile', authCheck, async (req, res) => {
   const user = await findUserById(req.user.id);
@@ -444,6 +496,10 @@ app.use('/api/processing', processingRouter);
 
 // ✅ Eltern-Board Routes (2026-09-03)
 app.use('/api/parent', parentRouter);
+
+// ✅ Lehrer-Portal Routes (2026-09-03)
+app.use('/api/teacher', teacherRouter);
+app.use('/api/classes', classesRouter);
 
 // 404 Handler
 app.use((req, res) => {

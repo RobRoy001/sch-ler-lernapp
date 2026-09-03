@@ -15,6 +15,10 @@ import SettingsPage from './pages/SettingsPage';
 import ElternLoginPage from './pages/eltern/ElternLoginPage';
 import ElternDashboardPage from './pages/eltern/ElternDashboardPage';
 import ElternKindPage from './pages/eltern/ElternKindPage';
+import LehrerLoginPage from './pages/lehrer/LehrerLoginPage';
+import LehrerKlassenPage from './pages/lehrer/LehrerKlassenPage';
+import LehrerKlassePage from './pages/lehrer/LehrerKlassePage';
+import KlassePage from './pages/klasse/KlassePage';
 import Logo from './components/Logo';
 import { API_BASE_URL } from './config/api';
 
@@ -111,6 +115,13 @@ function App() {
             <Route path="/eltern/login" element={<ElternLoginPage />} />
             <Route path="/eltern" element={<ElternDashboardPage />} />
             <Route path="/eltern/kind/:childId" element={<ElternKindPage />} />
+            {/* Lehrer-Portal (2026-09-03): eigene Login-Identität für
+                Lehrkräfte, ebenfalls unabhängig vom Kind-Auth-State (eigenes
+                "teacher_token"-Cookie) - die Seiten prüfen ihre Session
+                selbst über GET /api/teacher/me. */}
+            <Route path="/lehrer/login" element={<LehrerLoginPage />} />
+            <Route path="/lehrer" element={<LehrerKlassenPage />} />
+            <Route path="/lehrer/klassen/:id" element={<LehrerKlassePage />} />
             {/* Impressum/Datenschutz (Sicherheitsaudit Hoch #12) - müssen
                 unabhängig vom Login-Status erreichbar sein (Pflicht nach
                 § 5 DDG / Art. 13-14 DSGVO). */}
@@ -127,12 +138,21 @@ function App() {
             <Route path="/test/:sourceId" element={<TestPlayer />} />
             <Route path="/results/:submissionId" element={<ResultsPage />} />
             <Route path="/settings" element={<SettingsPage user={user} onLogout={handleLogout} />} />
+            {/* Lehrer-Portal (2026-09-03): eine per Klassencode beigetretene
+                Klasse gehört zum KIND-Konto (eigene, vom Lehrer-/Eltern-
+                Cookie unabhängige Session) - deshalb nur im authentifizierten
+                Zweig, im Gegensatz zu /lehrer/* und /eltern/* oben, die
+                unabhängig vom Kind-Login funktionieren. */}
+            <Route path="/klasse/:classId" element={<KlassePage />} />
             {/* Auch erreichbar, falls z.B. ein Elternteil den Link auf einem
                 Gerät öffnet, auf dem gerade ein anderes Konto eingeloggt ist. */}
             <Route path="/parent-consent" element={<ParentConsentPage />} />
             <Route path="/eltern/login" element={<ElternLoginPage />} />
             <Route path="/eltern" element={<ElternDashboardPage />} />
             <Route path="/eltern/kind/:childId" element={<ElternKindPage />} />
+            <Route path="/lehrer/login" element={<LehrerLoginPage />} />
+            <Route path="/lehrer" element={<LehrerKlassenPage />} />
+            <Route path="/lehrer/klassen/:id" element={<LehrerKlassePage />} />
             <Route path="/impressum" element={<ImpressumPage />} />
             <Route path="/datenschutz" element={<DatenschutzPage />} />
             <Route path="*" element={<Navigate to="/" />} />

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, LogOut, User, Download, Trash2, AlertTriangle, Users, X } from 'lucide-react';
+import { ArrowLeft, LogOut, User, Download, Trash2, AlertTriangle, Users, X, GraduationCap, ChevronRight } from 'lucide-react';
 import Logo from '../components/Logo';
 import { API_BASE_URL } from '../config/api';
 
@@ -24,6 +24,18 @@ export default function SettingsPage({ user, onLogout }) {
   const [parentsError, setParentsError] = useState('');
   const [revokingId, setRevokingId] = useState(null);
 
+  // ✅ Lehrer-Portal (2026-09-03): "Meine Klassen" - zeigt die per
+  // Klassencode beigetretenen Klassen (siehe backend/src/server.js
+  // GET /api/auth/my-classes) und ein Feld, um einem weiteren Klassencode
+  // beizutreten (POST /api/auth/join-class). Läuft über das normale
+  // Kind-Cookie ("token"), nicht über teacher_token/parent_token.
+  const [myClasses, setMyClasses] = useState([]);
+  const [classesLoading, setClassesLoading] = useState(true);
+  const [classesError, setClassesError] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [joinError, setJoinError] = useState('');
+
   useEffect(() => {
     const loadParents = async () => {
       try {
@@ -42,6 +54,24 @@ export default function SettingsPage({ user, onLogout }) {
       }
     };
     loadParents();
+
+    const loadClasses = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/my-classes`, {
+          credentials: 'include'
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Klassen konnten nicht geladen werden');
+        }
+        setMyClasses(data.classes || []);
+      } catch (err) {
+        setClassesError(err.message);
+      } finally {
+        setClassesLoading(false);
+      }
+    };
+    loadClasses();
   }, []);
 
   const handleRevokeParent = async (parentId) => {
@@ -60,6 +90,37 @@ export default function SettingsPage({ user, onLogout }) {
       setParentsError(err.message);
     } finally {
       setRevokingId(null);
+    }
+  };
+
+  const handleJoinClass = async (e) => {
+    e.preventDefault();
+    setJoinError('');
+    if (!joinCode.trim()) {
+      setJoinError('Bitte gib einen Klassencode ein');
+      return;
+    }
+
+    setJoinLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/join-class`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ class_code: joinCode.trim() })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Klasse konnte nicht beigetreten werden');
+
+      setMyClasses((prev) => [
+        { id: data.class.id, name: data.class.name, classCode: data.class.classCode, joinedAt: new Date().toISOString() },
+        ...prev.filter((c) => c.id !== data.class.id)
+      ]);
+      setJoinCode('');
+    } catch (err) {
+      setJoinError(err.message);
+    } finally {
+      setJoinLoading(false);
     }
   };
 
@@ -165,6 +226,55 @@ export default function SettingsPage({ user, onLogout }) {
               )}
             </div>
           </div>
+        </div>
+
+        <div className="bg-cream border border-gray-100 rounded-lg p-6 shadow-sm mb-6">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-gray-400 mb-4">
+            <GraduationCap size={14} /> Meine Klassen
+          </h2>
+
+          {classesLoading && <p className="text-gray-400 text-sm">Wird geladen…</p>}
+          {classesError && <p className="text-error-dark text-sm mb-3">{classesError}</p>}
+
+          {!classesLoading && myClasses.length === 0 && !classesError && (
+            <p className="text-gray-500 text-sm mb-4">
+              Du bist noch keiner Klasse beigetreten. Trage den Klassencode ein, den du von
+              deiner Lehrkraft bekommen hast.
+            </p>
+          )}
+
+          {myClasses.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {myClasses.map((c) => (
+                <Link
+                  key={c.id}
+                  to={`/klasse/${c.id}`}
+                  className="flex items-center justify-between bg-white border border-gray-100 rounded-md px-4 py-3 hover:border-primary/40 transition"
+                >
+                  <span className="text-gray-700 text-sm font-medium">{c.name}</span>
+                  <ChevronRight size={16} className="text-gray-300" />
+                </Link>
+              ))}
+            </div>
+          )}
+
+          <form onSubmit={handleJoinClass} className="flex gap-3">
+            <input
+              type="text"
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value)}
+              placeholder="Klassencode eingeben (z.B. KL-AB12CD)"
+              className="flex-1 h-11 px-4 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
+            <button
+              type="submit"
+              disabled={joinLoading}
+              className="bg-primary hover:bg-primary-dark text-white font-semibold rounded-md px-5 transition disabled:opacity-60"
+            >
+              {joinLoading ? 'Wird beigetreten…' : 'Beitreten'}
+            </button>
+          </form>
+          {joinError && <p className="text-error-dark text-sm mt-3">{joinError}</p>}
         </div>
 
         <div className="bg-cream border border-gray-100 rounded-lg p-6 shadow-sm mb-6">

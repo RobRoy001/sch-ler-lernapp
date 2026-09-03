@@ -20,11 +20,17 @@
 // (z.B. Eltern schauen sich das Eltern-Board an, während das Kind auf
 // demselben Rechner sein eigenes Konto offen hat), bekommt der Elternteil
 // ein EIGENES Cookie ("parent_token") statt das bestehende "token"-Cookie
-// zu überschreiben. Beide Cookies teilen sich dieselben Sicherheits-
-// Einstellungen (httpOnly/secure/sameSite) - nur der Name unterscheidet sie.
+// zu überschreiben.
+//
+// Erweiterung (Lehrer-Portal, 2026-09-03): gleiches Muster für Lehrkräfte -
+// eigenes Cookie ("teacher_token"), damit z.B. ein Lehrer-Laptop im
+// Klassenzimmer parallel zu einer Schüler-Session genutzt werden kann. Alle
+// drei Cookies teilen sich dieselben Sicherheits-Einstellungen
+// (httpOnly/secure/sameSite) - nur der Name unterscheidet sie.
 
 const COOKIE_NAME = 'token';
 const PARENT_COOKIE_NAME = 'parent_token';
+const TEACHER_COOKIE_NAME = 'teacher_token';
 const COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 Tage, wie JWT expiresIn
 
 function isProdEnv() {
@@ -90,11 +96,27 @@ function getParentTokenFromCookies(req) {
   return getCookieValue(req, PARENT_COOKIE_NAME);
 }
 
+// Lehrer-Konto (Lehrer-Portal, 2026-09-03)
+function setTeacherAuthCookie(res, token) {
+  setCookie(res, TEACHER_COOKIE_NAME, token);
+}
+
+function clearTeacherAuthCookie(res) {
+  clearCookie(res, TEACHER_COOKIE_NAME);
+}
+
+function getTeacherTokenFromCookies(req) {
+  return getCookieValue(req, TEACHER_COOKIE_NAME);
+}
+
 module.exports = {
   setAuthCookie,
   clearAuthCookie,
   getTokenFromCookies,
   setParentAuthCookie,
   clearParentAuthCookie,
-  getParentTokenFromCookies
+  getParentTokenFromCookies,
+  setTeacherAuthCookie,
+  clearTeacherAuthCookie,
+  getTeacherTokenFromCookies
 };
