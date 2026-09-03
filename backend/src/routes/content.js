@@ -4,19 +4,37 @@ const multer = require('multer');
 const { createSource, nextFileId, findSourcesByUser, findSourceById } = require('../store');
 const authCheck = require('../middleware/authCheck');
 const asyncHandler = require('../utils/asyncHandler');
+const { uploads, sourceFiles } = require('../utils/pendingUploads');
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 } // 10 MB
 });
 
+const VALID_TEST_FORMATS = ['multiple_choice', 'fill_gap', 'mixed', 'vocabulary'];
+const VALID_TEST_SCOPES = ['standard', 'arbeitsvorbereitung'];
+
 // POST /api/content/upload
+//
+// ✅ KI-Testgenerierung (2026-09-03): die Datei-Bytes wurden hier vorher
+// nach dem Request nie wieder angefasst (siehe KI-Testgenerierung-Konzept
+// Abschnitt 1 - "die hochgeladene Datei wird komplett verworfen"). Jetzt
+// wird der Buffer kurzzeitig in pendingUploads.uploads zwischengehalten,
+// bis POST /sources ihn per file_id abholt und an die eigentliche Source
+// hängt - siehe utils/pendingUploads.js für die genaue Begründung (kein
+// externer Objektspeicher, TTL-Aufräumung).
 router.post('/upload', authCheck, upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Keine Datei hochgeladen' });
   }
 
-  const fileId = nextFileId();
+  const fileId = String(nextFileId());
+  uploads.set(fileId, {
+    buffer: req.file.buffer,
+    filename: req.file.originalname,
+    mimetype: req.file.mimetype,
+    userId: req.user.id
+  });
 
   res.json({
     message: 'Datei erfolgreich hochgeladen',
@@ -30,9 +48,17 @@ router.post('/upload', authCheck, upload.single('file'), (req, res) => {
 });
 
 // POST /api/content/sources
+//
+// Nimmt jetzt zusätzlich file_id (aus POST /upload), test_format, test_scope
+// und consent entgegen (siehe UploadPage.jsx) und verknüpft die zuvor
+// hochgeladene Datei mit der neu angelegten Source, statt die beiden völlig
+// unabhängig voneinander zu lassen (siehe KI-Testgenerierung-Konzept
+// Abschnitt 9, "Upload und Source-Anlage in einem Schritt zusammenführen" -
+// technisch weiterhin zwei Requests, aber die Datei geht dazwischen nicht
+// mehr verloren).
 router.post('/sources', authCheck, asyncHandler(async (req, res) => {
   try {
-    const { content_type, reference_id, reference_book_id } = req.body;
+    const { content_type, reference_id, reference_book_id, file_id, test_format, test_scope, consent } = req.body;
 
     if (!content_type) {
       return res.status(400).json({ error: 'content_type erforderlich' });
@@ -44,6 +70,24 @@ router.post('/sources', authCheck, asyncHandler(async (req, res) => {
       reference_id,
       reference_book_id
     });
+
+    if (file_id !== undefined && file_id !== null && file_id !== '') {
+      const pending = uploads.take(String(file_id));
+      // Nur übernehmen, wenn die Datei tatsächlich von diesem Nutzer
+      // hochgeladen wurde - verhindert, dass jemand die file_id einer
+      // fremden, noch nicht abgeholten Datei errät und sich damit einen
+      // fremden Upload "stiehlt".
+      if (pending && pending.userId === req.user.id) {
+        sourceFiles.set(String(source.id), {
+          buffer: pending.buffer,
+          filename: pending.filename,
+          mimetype: pending.mimetype,
+          testFormat: VALID_TEST_FORMATS.includes(test_format) ? test_format : 'multiple_choice',
+          testScope: VALID_TEST_SCOPES.includes(test_scope) ? test_scope : 'standard',
+          consent: consent === true || consent === 'true'
+        });
+      }
+    }
 
     res.json({
       message: 'Content Source erstellt',

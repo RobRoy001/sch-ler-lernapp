@@ -9,6 +9,10 @@ const {
 } = require('../store');
 const authCheck = require('../middleware/authCheck');
 const asyncHandler = require('../utils/asyncHandler');
+const { sourceFiles } = require('../utils/pendingUploads');
+const { extractText } = require('../services/textExtraction');
+const { sanitizeForOpenAI } = require('../utils/contentSanitizer');
+const { generateQuestions } = require('../services/questionGenerator');
 
 // ✅ Sicherheitsaudit Befund 10: es gibt hier keinen "Mock-Modus"-Zweig mehr
 // (vorher: usingMockMode-Flag + eine separate, nur lokal im Prozess
@@ -24,10 +28,15 @@ const asyncHandler = require('../utils/asyncHandler');
 // würde statt nur zu einem 500er für diese eine Anfrage.
 
 // ---- Mock-Testgenerierung ----
-// Platzhalter, bis eine echte KI-Generierung aus dem Dokumenttext sicher
-// angebunden ist (siehe Sicherheitsaudit Kritisch #6: Uploads müssen vor
-// einem OpenAI-Aufruf bereinigt werden – das ist bewusst NICHT Teil
-// dieses Fixes, der nur die Datenpersistenz behebt).
+// ✅ KI-Testgenerierung (2026-09-03): jetzt der bewusste FALLBACK statt des
+// einzigen Wegs - siehe processSourceInBackground() unten. Greift, wenn (a)
+// keine Datei verknüpft ist, (b) keine Einwilligung zur KI-Verarbeitung
+// vorliegt (Robert-Entscheidung: kein Hard-Block, sondern klar
+// gekennzeichneter Mock-Test als Fallback), oder (c) die echte Pipeline aus
+// irgendeinem Grund fehlschlägt (schlechtes Foto, OpenAI-Fehler, zu wenige
+// valide Fragen nach der Prüfung). So bekommt der Nutzer NIE eine leere
+// Fehlerseite, nur im schlechteren Fall generische Beispielfragen statt
+// echter.
 function generateMockTest(sourceId) {
   return {
     id: sourceId,
@@ -62,6 +71,58 @@ function generateMockTest(sourceId) {
   };
 }
 
+// ✅ KI-Testgenerierung (2026-09-03): echte Pipeline statt der bisherigen
+// setInterval-Simulation ohne echte Arbeit (siehe claude/KI-Testgenerierung-
+// Konzept-2026-09-03.md Abschnitt 5). Läuft NACH dem Response weiter (wie
+// vorher schon der Fall) - deshalb eigenes try/catch statt asyncHandler
+// (das wirkt nur auf die direkte Route-Funktion, nicht auf diese später
+// laufende Funktion). Wirft NIE einen Fehler nach außen: jeder Fehlerfall
+// endet am Ende trotzdem in status: 'completed' mit einem Mock-Test statt
+// status: 'error' (siehe generateMockTest-Kommentar oben) - das Frontend
+// (ProcessingPage.jsx) hat für einen dauerhaften 'error'-Status ohnehin
+// keine eigene Anzeige vorgesehen, und Robert hat sich bewusst für
+// "Mock-Test als Fallback" statt eines Hard-Blocks entschieden.
+async function processSourceInBackground(sourceId) {
+  const pendingFile = sourceFiles.take(String(sourceId));
+  let test = null;
+  let fallbackReason = null;
+
+  try {
+    await updateSource(sourceId, { progress: 25 });
+
+    if (!pendingFile) {
+      fallbackReason = 'keine Datei verknüpft';
+    } else if (!pendingFile.consent) {
+      fallbackReason = 'keine Einwilligung zur KI-Verarbeitung erteilt';
+    } else {
+      const { text } = await extractText(pendingFile.buffer, pendingFile.mimetype);
+      await updateSource(sourceId, { progress: 55 });
+
+      const sanitized = sanitizeForOpenAI(text);
+      await updateSource(sourceId, { progress: 70 });
+
+      test = await generateQuestions({
+        text: sanitized,
+        format: pendingFile.testFormat,
+        scope: pendingFile.testScope
+      });
+      await updateSource(sourceId, { progress: 90 });
+    }
+  } catch (err) {
+    fallbackReason = err.message;
+    console.error(`Echte Testgenerierung für Source ${sourceId} fehlgeschlagen, nutze Mock-Fallback:`, err.message);
+  }
+
+  if (!test) {
+    test = generateMockTest(sourceId);
+    // Rein informativ fürs spätere Debugging/Audit-Log - wird von
+    // TestPlayer.jsx/store.js nicht ausgewertet, stört also nirgends.
+    test.fallback_reason = fallbackReason;
+  }
+
+  await updateSource(sourceId, { status: 'completed', progress: 100, test });
+}
+
 // ✅ POST /api/processing/sources/:sourceId/process - Verarbeitung starten
 router.post('/sources/:sourceId/process', authCheck, asyncHandler(async (req, res) => {
   try {
@@ -73,37 +134,11 @@ router.post('/sources/:sourceId/process', authCheck, asyncHandler(async (req, re
     }
 
     await updateSource(sourceId, { status: 'processing', progress: 10 });
-
-    // Simuliert einen laufenden Verarbeitungsschritt (wie vorher), nur dass
-    // jetzt bei jedem Fortschrittsschritt die Datenbank aktualisiert wird
-    // statt nur ein In-Memory-Objekt zu mutieren - so übersteht der Zustand
-    // auch einen Server-Neustart mitten in der "Verarbeitung". Läuft
-    // außerhalb des Request/Response-Zyklus, deshalb hier weiterhin ein
-    // eigenes try/catch statt asyncHandler (der wirkt nur auf die direkte
-    // Route-Funktion, nicht auf einen später auslösenden Timer).
-    const steps = [30, 60, 90, 100];
-    let i = 0;
-    const interval = setInterval(async () => {
-      try {
-        const progress = steps[i];
-        if (progress === 100) {
-          await updateSource(sourceId, {
-            status: 'completed',
-            progress,
-            test: generateMockTest(sourceId)
-          });
-          clearInterval(interval);
-        } else {
-          await updateSource(sourceId, { progress });
-        }
-        i++;
-      } catch (err) {
-        console.error('Fehler bei der Verarbeitungs-Simulation:', err);
-        clearInterval(interval);
-      }
-    }, 800);
-
     res.json({ message: 'Verarbeitung gestartet', status: 'processing' });
+
+    processSourceInBackground(sourceId).catch((err) => {
+      console.error(`Unerwarteter Fehler bei der Verarbeitung von Source ${sourceId}:`, err);
+    });
   } catch (error) {
     console.error('Fehler beim Start der Verarbeitung:', error);
     res.status(500).json({ error: 'Verarbeitung konnte nicht gestartet werden' });

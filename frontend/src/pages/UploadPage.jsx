@@ -15,6 +15,17 @@ export default function UploadPage({ user }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
+  // ✅ KI-Testgenerierung (2026-09-03, siehe claude/KI-Testgenerierung-
+  // Konzept-2026-09-03.md Abschnitt 4 + 7): Testtyp-Auswahl und
+  // Einwilligungs-Checkbox, beide vorher hier komplett nicht vorhanden.
+  // "Vokabeltest" ist bewusst NICHT in der Auswahl, da die Matching-UI zur
+  // Bearbeitung eines Vokabeltests noch nicht gebaut ist (siehe
+  // Konzept-Dokument Abschnitt 4, VocabularyQuestion.jsx) - Backend kann
+  // ihn zwar schon generieren, ohne Anzeige-UI aber nicht sinnvoll wählbar.
+  const [testFormat, setTestFormat] = useState('multiple_choice');
+  const [testScope, setTestScope] = useState('standard');
+  const [aiConsent, setAiConsent] = useState(false);
+
   const handleFileSelect = (e) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
@@ -67,15 +78,27 @@ export default function UploadPage({ user }) {
         throw new Error(data.error || 'Upload fehlgeschlagen');
       }
 
+      const uploadData = await uploadResponse.json();
+
       // Nach dem Datei-Upload wird eine Content-Source angelegt, die die
       // Verarbeitung (Testgenerierung) für genau diese Aufgabe verfolgt.
+      // ✅ KI-Testgenerierung (2026-09-03): file_id verknüpft die gerade
+      // hochgeladene Datei mit dieser Source (vorher gingen beide Requests
+      // komplett unabhängig voneinander - die Datei war danach für immer
+      // weg), test_format/test_scope/consent steuern die neue Pipeline.
       const sourceResponse = await fetch(`${API_BASE_URL}/content/sources`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ content_type: file.type || 'document' }),
+        body: JSON.stringify({
+          content_type: file.type || 'document',
+          file_id: uploadData.file.id,
+          test_format: testFormat,
+          test_scope: testScope,
+          consent: aiConsent
+        }),
         credentials: 'include'
       });
 
@@ -181,6 +204,58 @@ export default function UploadPage({ user }) {
                 </div>
               )}
             </div>
+
+            {/* Testtyp-Auswahl (Konzept-Dokument Abschnitt 4: Format und
+                Umfang sind zwei unabhängige Achsen) */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Fragenformat
+                </label>
+                <select
+                  value={testFormat}
+                  onChange={(e) => setTestFormat(e.target.value)}
+                  className="w-full h-11 px-4 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                >
+                  <option value="multiple_choice">Multiple Choice</option>
+                  <option value="fill_gap">Lückentext</option>
+                  <option value="mixed">Gemischt</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Umfang
+                </label>
+                <select
+                  value={testScope}
+                  onChange={(e) => setTestScope(e.target.value)}
+                  className="w-full h-11 px-4 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                >
+                  <option value="standard">Standard-Test</option>
+                  <option value="arbeitsvorbereitung">Arbeitsvorbereitung (mehr Fragen)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Einwilligung zur KI-Verarbeitung (Konzept-Dokument Abschnitt
+                7 - ohne diese Checkbox gibt es keine Rechtsgrundlage für
+                die Übermittlung an OpenAI; Robert-Entscheidung: kein
+                Hard-Block, ohne Zustimmung gibt's stattdessen einen klar
+                als Beispiel gekennzeichneten Mock-Test) */}
+            <label className="flex items-start gap-3 p-4 bg-gray-50 border border-gray-200 rounded-md cursor-pointer">
+              <input
+                type="checkbox"
+                checked={aiConsent}
+                onChange={(e) => setAiConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span className="text-sm text-gray-700">
+                Ich bin einverstanden, dass der Inhalt meiner Datei zur Texterkennung und
+                KI-gestützten Fragen-Erstellung verarbeitet wird (empfohlen, für echte Fragen
+                zu deiner Datei). Ohne Zustimmung bekommst du stattdessen allgemeine
+                Beispielfragen.
+              </span>
+            </label>
 
             {/* Error Message */}
             {error && (
