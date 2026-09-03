@@ -1,1 +1,22 @@
-{"name":"sch-ler-lernapp","version":"1.0.0","scripts":{"dev:backend":"node backend/src/index.js","dev:frontend":"cd frontend && npm run dev","start":"concurrently \"npm run dev:backend\" \"npm run dev:frontend\""},"dependencies":{"bcryptjs":"^2.4.3","bull":"^4.16.5","cors":"^2.8.6","dotenv":"^16.0.3","express":"^5.2.1","jsonwebtoken":"^9.0.0","openai":"^7.8.0","pg":"^8.8.0"},"devDependencies":{"concurrently":"^8.2.0"}}
+{
+  "name": "sch-ler-lernapp",
+  "version": "1.0.0",
+  "scripts": {
+    "dev:backend": "node backend/src/server.js",
+    "dev:frontend": "cd frontend && npm run dev",
+    "start": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "bull": "^4.16.5",
+    "cors": "^2.8.6",
+    "dotenv": "^16.0.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.0",
+    "openai": "^7.8.0",
+    "pg": "^8.8.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}
