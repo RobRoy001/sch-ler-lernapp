@@ -163,6 +163,50 @@ async function deleteUser(userId) {
 }
 
 // ============================================================================
+// ADMIN / WARTUNG (2026-09-03) - für das einmalige Aufräumen von Testkonten,
+// siehe routes/admin.js. Nutzt dieselbe Grundlage wie deleteUser oben: alle
+// Fremdschlüssel auf parents(id)/teachers(id) sind in database/migrations.js
+// mit ON DELETE CASCADE angelegt, ein einfaches DELETE reicht deshalb aus
+// (räumt parent_child_links bzw. classes/class_memberships/class_sources/
+// class_source_submissions automatisch mit auf).
+// ============================================================================
+
+async function deleteParent(parentId) {
+  const result = await query('DELETE FROM parents WHERE id = $1 RETURNING id', [parentId]);
+  return result.rows[0];
+}
+
+async function deleteTeacher(teacherId) {
+  const result = await query('DELETE FROM teachers WHERE id = $1 RETURNING id', [teacherId]);
+  return result.rows[0];
+}
+
+// Bewusst ohne password_hash, sonst identisch zu den einzelnen find*-
+// Funktionen - nur für die admin-geschützte Übersichts-Route gedacht, damit
+// vor dem Löschen echte IDs sichtbar sind statt geraten werden zu müssen.
+async function listAllUsersForAdmin() {
+  const result = await query(
+    `SELECT id, email, name, grade_level, account_status, created_at
+     FROM users ORDER BY created_at DESC`
+  );
+  return result.rows;
+}
+
+async function listAllParentsForAdmin() {
+  const result = await query(
+    `SELECT id, email, name, created_at FROM parents ORDER BY created_at DESC`
+  );
+  return result.rows;
+}
+
+async function listAllTeachersForAdmin() {
+  const result = await query(
+    `SELECT id, email, name, created_at FROM teachers ORDER BY created_at DESC`
+  );
+  return result.rows;
+}
+
+// ============================================================================
 // SOURCES (von content.js / processing.js genutzt)
 // ============================================================================
 
@@ -591,6 +635,13 @@ module.exports = {
   // GDPR
   exportUserData,
   deleteUser,
+
+  // Admin / Wartung (Testkonten-Aufräumen, siehe routes/admin.js)
+  deleteParent,
+  deleteTeacher,
+  listAllUsersForAdmin,
+  listAllParentsForAdmin,
+  listAllTeachersForAdmin,
 
   // Sources
   nextFileId,

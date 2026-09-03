@@ -39,6 +39,7 @@ const contentRouter = require('./routes/content');
 const parentRouter = require('./routes/parent');
 const teacherRouter = require('./routes/teacher');
 const classesRouter = require('./routes/classes');
+const adminRouter = require('./routes/admin');
 
 // Unter diesem Alter ist laut Art. 8 DSGVO eine Elternzustimmung nötig,
 // bevor ein Konto aktiv genutzt werden darf (Sicherheitsaudit Kritisch #5).
@@ -500,6 +501,11 @@ app.use('/api/parent', parentRouter);
 // ✅ Lehrer-Portal Routes (2026-09-03)
 app.use('/api/teacher', teacherRouter);
 app.use('/api/classes', classesRouter);
+
+// ⚠️ TEMPORÄR: Admin-Wartungsrouten zum Aufräumen der Test-Konten (siehe
+// routes/admin.js) - durch ADMIN_CLEANUP_SECRET geschützt, nach Gebrauch
+// diese Zeile + routes/admin.js + die Railway-Variable wieder entfernen.
+app.use('/api/admin', adminRouter);
 
 // 404 Handler
 app.use((req, res) => {
