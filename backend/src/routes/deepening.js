@@ -13,14 +13,14 @@
 // - Pro/Familie/Klassen-Abo (users.subscription_status === 'active'):
 //   unbegrenzt.
 // - Free-Nutzer:innen: ein abgeschlossener 2,49-€-Einzelkauf
-//   (purchases.product_type = 'vertiefung') für GENAU diesen Themen-Text.
-//   Bewusste Vereinfachung: der Abgleich ist ein exakter String-Vergleich,
-//   keine semantische Ähnlichkeit - generiert die KI bei einem späteren Test
-//   einen leicht anders formulierten Themen-Text für dasselbe Konzept (z.B.
-//   "Bruchrechnung" statt "Bruchrechnung - Erweitern/Kürzen"), wird ein
-//   bereits gekauftes Thema nicht wiedererkannt. Spätere Verbesserung:
-//   Themen aus einer festen, fachbezogenen Liste wählen lassen statt frei
-//   generieren zu lassen.
+//   (purchases.product_type = 'vertiefung') für GENAU DIESEN TEST
+//   (purchases.submission_id). ✅ Fix (2026-09-06): vorher war der Kauf an
+//   den exakten Themen-Text gebunden - dadurch wurde bei mehreren
+//   Schwachthemen in einem Test fälschlich mehrfach 2,49 € fällig. Jetzt
+//   schaltet ein einziger Kauf ALLE Schwachthemen des jeweiligen Tests frei
+//   (behebt nebenbei auch die alte Schwäche, dass ein leicht anders
+//   formulierter Themen-Text bei einem späteren Test nicht wiedererkannt
+//   wurde - der Test-Bezug ist eindeutig, kein String-Vergleich mehr nötig).
 
 const express = require('express');
 const router = express.Router();
@@ -75,11 +75,14 @@ router.post('/generate', authCheck, asyncHandler(async (req, res) => {
     findPurchasesByUser(userId)
   ]);
   const isPro = billing?.subscription_status === 'active';
-  const hasPurchased = purchases.some((p) => p.product_type === 'vertiefung' && p.topic === topic);
+  const submissionIdInt = parseInt(submissionId, 10);
+  const hasPurchased = purchases.some(
+    (p) => p.product_type === 'vertiefung' && p.submission_id === submissionIdInt
+  );
 
   if (!isPro && !hasPurchased) {
     return res.status(402).json({
-      error: 'Für dieses Thema ist ein Kauf oder ein Pro-Abo nötig',
+      error: 'Für diesen Test ist ein Kauf oder ein Pro-Abo nötig',
       requiresPurchase: true,
       topic
     });

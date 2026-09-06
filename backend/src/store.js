@@ -690,13 +690,13 @@ async function findUserBillingStatus(userId) {
   return result.rows[0];
 }
 
-async function createPurchase({ userId, stripeCheckoutSessionId, productType, topic, amountCents }) {
+async function createPurchase({ userId, stripeCheckoutSessionId, productType, topic, submissionId, amountCents }) {
   const result = await query(
     `INSERT INTO purchases (
-       user_id, stripe_checkout_session_id, product_type, topic, amount_cents, status, created_at
-     ) VALUES ($1, $2, $3, $4, $5, 'pending', NOW())
+       user_id, stripe_checkout_session_id, product_type, topic, submission_id, amount_cents, status, created_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
      RETURNING *`,
-    [userId, stripeCheckoutSessionId, productType, topic || null, amountCents || null]
+    [userId, stripeCheckoutSessionId, productType, topic || null, submissionId || null, amountCents || null]
   );
   return result.rows[0];
 }
@@ -722,7 +722,7 @@ async function completePurchase(purchaseId, stripePaymentIntentId) {
 
 async function findPurchasesByUser(userId) {
   const result = await query(
-    `SELECT id, product_type, topic, amount_cents, status, created_at, completed_at
+    `SELECT id, product_type, topic, submission_id, amount_cents, status, created_at, completed_at
      FROM purchases WHERE user_id = $1 AND status = 'completed'
      ORDER BY created_at DESC`,
     [userId]

@@ -163,6 +163,18 @@ async function runMigrations() {
       completed_at TIMESTAMP
     )
   `);
+  // ✅ Fix (2026-09-06): Robert wollte den Vertiefungsmodus-Einzelkauf nicht
+  // pro einzelnem Schwachthema abrechnen (das Preismodell-Dokument sah das
+  // ursprünglich so vor), sondern EINMAL pro Test - ein Kauf schaltet dann
+  // ALLE in diesem Test erkannten Schwachthemen frei. Der Kauf braucht dafür
+  // einen Bezug zum Test statt zu einem einzelnen Themen-Text, siehe
+  // routes/billing.js (createPurchase) und routes/processing.js
+  // (computeWeakTopics/loadDeepeningAccess). "topic" bleibt als Spalte
+  // erhalten (nur noch informativ, für die Kaufhistorie), ist aber nicht
+  // mehr die Freischaltungs-Bedingung.
+  await query(`
+    ALTER TABLE purchases ADD COLUMN IF NOT EXISTS submission_id INTEGER REFERENCES test_submissions(id) ON DELETE SET NULL
+  `);
 
   // ---- Vertiefungsmodus (2026-09-06, siehe LernApp-Preismodell-Nachhilfe-
   // Klassenmodell-2026-09-02.md Abschnitt 4) ----

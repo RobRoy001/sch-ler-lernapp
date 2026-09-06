@@ -9,6 +9,13 @@ import { API_BASE_URL } from '../config/api';
 // "2,49 € freischalten"-Button (Free, noch nicht gekauft). Wird sowohl
 // direkt nach dem Test (TestPlayer.jsx) als auch beim späteren erneuten
 // Aufruf des Ergebnisses (ResultsPage.jsx) verwendet.
+//
+// ✅ Fix (2026-09-06): der Kauf gilt jetzt pro TEST, nicht mehr pro Thema
+// (Robert: "es soll aber nur einmal 2,49€ für Vertiefung genommen werden").
+// "weakTopic.unlocked" kommt vom Backend deshalb für alle Themen desselben
+// Tests identisch zurück - ein Klick auf "freischalten" bei irgendeinem
+// Thema schaltet automatisch alle Schwachthemen dieses Tests frei (siehe
+// computeWeakTopics/loadDeepeningAccess in routes/processing.js).
 
 function PracticeQuiz({ deepeningId, questions }) {
   const [answers, setAnswers] = useState({});
@@ -169,10 +176,11 @@ function TopicCard({ submissionId, weakTopic, autoGenerate, onAutoGenerateHandle
             <button
               onClick={handleUnlock}
               disabled={checkoutLoading}
+              title="Schaltet alle Schwachthemen dieses Tests frei, nicht nur dieses eine"
               className="flex items-center gap-2 bg-accent hover:bg-accent-dark text-white px-4 py-2 rounded-md font-semibold text-sm transition disabled:opacity-60"
             >
               <Lock size={15} />
-              {checkoutLoading ? 'Wird geöffnet…' : 'Für 2,49 € freischalten'}
+              {checkoutLoading ? 'Wird geöffnet…' : 'Alle Schwachthemen für 2,49 € freischalten'}
             </button>
           ))}
       </div>

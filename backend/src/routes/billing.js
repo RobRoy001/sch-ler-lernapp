@@ -85,8 +85,13 @@ router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async 
   if (type !== 'pro' && type !== 'vertiefung') {
     return res.status(400).json({ error: 'type muss "pro" oder "vertiefung" sein' });
   }
-  if (type === 'vertiefung' && !topic) {
-    return res.status(400).json({ error: 'topic ist für den Vertiefungsmodus-Einzelkauf erforderlich' });
+  // ✅ Fix (2026-09-06): der Einzelkauf gilt jetzt pro TEST (submissionId),
+  // nicht mehr pro einzelnem Thema - siehe Kommentar bei computeWeakTopics()
+  // in routes/processing.js. "topic" wird optional weiterhin mitgeschickt
+  // (nur noch für die Stripe-Checkout-Beschreibung und den automatischen
+  // Rücksprung/Vertiefungs-Start auf der Ergebnisseite, siehe unten).
+  if (type === 'vertiefung' && !submissionId) {
+    return res.status(400).json({ error: 'submissionId ist für den Vertiefungsmodus-Einzelkauf erforderlich' });
   }
 
   const priceId = type === 'pro' ? STRIPE_PRICE_PRO : STRIPE_PRICE_VERTIEFUNG;
@@ -129,13 +134,17 @@ router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async 
   // Für den Einzelkauf legen wir schon jetzt einen "pending"-Datensatz an,
   // damit der Webhook (siehe handleStripeWebhook unten) ihn per Session-ID
   // wiederfindet und auf "completed" setzt - beim Abo braucht es das nicht,
-  // dessen Status steht direkt auf users.subscription_status.
+  // dessen Status steht direkt auf users.subscription_status. submissionId
+  // ist die eigentliche Freischaltungs-Bedingung (siehe computeWeakTopics
+  // in routes/processing.js) - ein Kauf gilt für ALLE Schwachthemen dieses
+  // einen Tests, nicht nur für "topic".
   if (type === 'vertiefung') {
     await createPurchase({
       userId: req.user.id,
       stripeCheckoutSessionId: session.id,
       productType: 'vertiefung',
       topic: topic || null,
+      submissionId: submissionId ? parseInt(submissionId, 10) : null,
       amountCents: session.amount_total ?? null
     });
   }

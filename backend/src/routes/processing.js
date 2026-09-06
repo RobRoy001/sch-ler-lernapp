@@ -19,13 +19,22 @@ const { generateQuestions } = require('../services/questionGenerator');
 // ✅ Vertiefungsmodus (2026-09-06, siehe LernApp-Preismodell-Nachhilfe-
 // Klassenmodell-2026-09-02.md Abschnitt 4.1): gruppiert die falsch
 // beantworteten Fragen einer Einreichung nach ihrem "topic"-Tag (siehe
-// questionGenerator.js) und markiert pro Thema, ob es für diesen Nutzer
-// schon freigeschaltet ist (aktives Pro-Abo ODER ein abgeschlossener
-// 2,49-€-Einzelkauf für genau dieses Thema, siehe routes/deepening.js).
+// questionGenerator.js) und markiert, ob dieser TEST für den Nutzer
+// freigeschaltet ist (aktives Pro-Abo ODER ein abgeschlossener
+// 2,49-€-Einzelkauf für GENAU DIESEN Test, siehe routes/deepening.js).
 // Wird sowohl direkt nach dem Einreichen (POST .../submit) als auch beim
 // späteren erneuten Aufruf (GET .../submissions/:id) verwendet, damit beide
 // Stellen exakt dieselbe Logik nutzen statt sie zu duplizieren.
-function computeWeakTopics(gradedAnswers, { isPro, purchasedTopics }) {
+//
+// ✅ Fix (2026-09-06): Robert wollte NICHT pro einzelnem Schwachthema
+// bezahlen ("für jeden Fehler 2,49 €") - ein Kauf gilt jetzt für den ganzen
+// Test: ist der aktuelle Test einmal freigeschaltet, sind alle darin
+// erkannten Schwachthemen nutzbar. Vorher war "unlocked" pro Thema einzeln
+// (exakter String-Vergleich auf purchases.topic) - das führte dazu, dass
+// bei mehreren Schwachthemen in einem Test auch mehrfach bezahlt werden
+// musste. Jetzt reicht ein einziges "isUnlockedForSubmission"-Flag, das für
+// jedes Thema dieses Tests gleichermaßen gilt.
+function computeWeakTopics(gradedAnswers, { isPro, isUnlockedForSubmission }) {
   const byTopic = new Map();
 
   for (const a of gradedAnswers) {
@@ -42,24 +51,24 @@ function computeWeakTopics(gradedAnswers, { isPro, purchasedTopics }) {
     .filter((t) => t.wrongCount > 0)
     .map((t) => ({
       ...t,
-      unlocked: isPro || purchasedTopics.has(t.topic)
+      unlocked: isPro || isUnlockedForSubmission
     }))
     .sort((a, b) => b.wrongCount - a.wrongCount);
 }
 
-// Lädt Pro-Status + bereits gekaufte Vertiefungs-Themen eines Nutzers -
-// gebündelt, weil beide Werte für computeWeakTopics() immer zusammen
-// gebraucht werden.
-async function loadDeepeningAccess(userId) {
+// Lädt Pro-Status + prüft, ob GENAU DIESER Test (submissionId) bereits per
+// Einzelkauf freigeschaltet wurde - gebündelt, weil beide Werte für
+// computeWeakTopics() immer zusammen gebraucht werden.
+async function loadDeepeningAccess(userId, submissionId) {
   const [billing, purchases] = await Promise.all([
     findUserBillingStatus(userId),
     findPurchasesByUser(userId)
   ]);
   const isPro = billing?.subscription_status === 'active';
-  const purchasedTopics = new Set(
-    purchases.filter((p) => p.product_type === 'vertiefung' && p.status === 'completed').map((p) => p.topic)
+  const isUnlockedForSubmission = purchases.some(
+    (p) => p.product_type === 'vertiefung' && p.submission_id === submissionId
   );
-  return { isPro, purchasedTopics };
+  return { isPro, isUnlockedForSubmission };
 }
 
 // ✅ Sicherheitsaudit Befund 10: es gibt hier keinen "Mock-Modus"-Zweig mehr
@@ -314,7 +323,7 @@ router.post('/tests/:testId/submit', authCheck, asyncHandler(async (req, res) =>
       timeTaken: timeTaken || 0
     });
 
-    const access = await loadDeepeningAccess(userId);
+    const access = await loadDeepeningAccess(userId, submission.id);
     const weakTopics = computeWeakTopics(gradedAnswers, access);
 
     return res.json({
@@ -422,7 +431,7 @@ router.get('/submissions/:submissionId', authCheck, asyncHandler(async (req, res
     // explanation direkt mitgespeichert) alles Nötige für die
     // Ergebnis-Anzeige, ganz ohne Join zurück zur Source.
     const gradedAnswers = submission.answers_json || [];
-    const access = await loadDeepeningAccess(userId);
+    const access = await loadDeepeningAccess(userId, submission.id);
     const weakTopics = computeWeakTopics(gradedAnswers, access);
 
     res.json({
