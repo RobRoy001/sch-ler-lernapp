@@ -204,10 +204,20 @@ async function runMigrations() {
     )
   `);
 
+  // ✅ Fix (2026-09-06): Robert gibt beim Hochladen einen eigenen Titel ein
+  // ("z.B. Mathe Klausur - Kapitel 5"), der aber nirgends gespeichert wurde -
+  // "sources" hatte keine title-Spalte, das Dashboard/Ergebnisse zeigten
+  // deshalb immer nur den hartkodierten Platzhalter "Generierter Test" statt
+  // dem, was Robert tatsächlich eingegeben hat.
+  await query(`
+    ALTER TABLE sources ADD COLUMN IF NOT EXISTS title VARCHAR(255)
+  `);
+
   console.log('✅ Eltern-Board Tabellen geprüft/angelegt (parents, parent_child_links).');
   console.log('✅ Lehrer-Portal Tabellen geprüft/angelegt (teachers, classes, class_memberships, class_sources, class_source_submissions).');
   console.log('✅ Zahlungs-Spalten/Tabellen geprüft/angelegt (users.stripe_*, purchases).');
   console.log('✅ Vertiefungsmodus-Tabelle geprüft/angelegt (deepenings).');
+  console.log('✅ sources.title Spalte geprüft/angelegt.');
 }
 
 module.exports = { runMigrations };

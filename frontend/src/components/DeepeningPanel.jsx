@@ -100,7 +100,12 @@ function TopicCard({ submissionId, weakTopic, autoGenerate, onAutoGenerateHandle
   const [error, setError] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-  const generate = useCallback(async () => {
+  // ✅ Fix (2026-09-06): der Stripe-Webhook kann dem Checkout-Redirect noch
+  // hinterherhinken (beobachtet bis zu ~28s) - vorher zeigte ein 402 hier
+  // sofort eine Fehlermeldung ohne jede weitere Aktion, Robert musste selbst
+  // manuell erneut klicken. "attempt" erlaubt jetzt bis zu 3 automatische
+  // Wiederholungen im Abstand von 5s, bevor endgültig aufgegeben wird.
+  const generate = useCallback(async (attempt = 0) => {
     setLoading(true);
     setError('');
     try {
@@ -113,12 +118,18 @@ function TopicCard({ submissionId, weakTopic, autoGenerate, onAutoGenerateHandle
       const data = await response.json();
       if (!response.ok) {
         if (response.status === 402) {
-          setError('Die Zahlung wird noch verarbeitet - bitte in ein paar Sekunden erneut versuchen.');
+          if (attempt < 3) {
+            setError('Die Zahlung wird noch verarbeitet - wird gleich automatisch erneut versucht…');
+            setTimeout(() => generate(attempt + 1), 5000);
+          } else {
+            setError('Die Zahlung wird noch verarbeitet - bitte in ein paar Sekunden erneut versuchen.');
+          }
           return;
         }
         throw new Error(data.error || 'Vertiefung konnte nicht geladen werden');
       }
       setDeepening(data.deepening);
+      setError('');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -165,7 +176,7 @@ function TopicCard({ submissionId, weakTopic, autoGenerate, onAutoGenerateHandle
         {!deepening &&
           (weakTopic.unlocked ? (
             <button
-              onClick={generate}
+              onClick={() => generate()}
               disabled={loading}
               className="flex items-center gap-2 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md font-semibold text-sm transition disabled:opacity-60"
             >

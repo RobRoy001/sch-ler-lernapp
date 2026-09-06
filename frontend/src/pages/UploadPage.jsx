@@ -98,7 +98,12 @@ export default function UploadPage({ user }) {
           file_id: uploadData.file.id,
           test_format: testFormat,
           test_scope: testScope,
-          consent: aiConsent
+          consent: aiConsent,
+          // ✅ Fix (2026-09-06): der eingegebene Titel ging vorher komplett
+          // verloren (wurde nur an POST /upload geschickt, nie an
+          // POST /sources, das ihn dauerhaft speichert) - Dashboard/
+          // Ergebnisseite zeigten deshalb immer "Generierter Test".
+          title
         }),
         credentials: 'include'
       });

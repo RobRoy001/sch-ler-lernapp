@@ -26,6 +26,13 @@ export default function ResultsPage() {
   const billingBanner = searchParams.get('billing');
   const autoGenerateTopic = billingBanner === 'success' ? searchParams.get('topic') : null;
 
+  // ✅ Fix (2026-09-06): "cameFromCheckout" wird EINMALIG beim allerersten
+  // Rendern aus der URL gelesen, nicht aus dem live "billingBanner" oben -
+  // DeepeningPanel entfernt ?billing=success/&topic= schon nach dem ersten
+  // automatischen "Jetzt vertiefen"-Aufruf wieder (dismissBillingBanner
+  // unten), das darf das Nachladen weiter unten nicht vorzeitig stoppen.
+  const [cameFromCheckout] = useState(() => searchParams.get('billing') === 'success');
+
   const dismissBillingBanner = () => {
     const next = new URLSearchParams(searchParams);
     next.delete('billing');
@@ -37,8 +44,44 @@ export default function ResultsPage() {
     loadSubmission();
   }, [submissionId]);
 
+  // ✅ Fix (2026-09-06): Robert berichtete, dass nach einem Vertiefungsmodus-
+  // Kauf zwar das automatisch gestartete Thema freigeschaltet wurde, alle
+  // anderen Schwachthemen-Karten desselben Tests aber weiter "2,49 €
+  // freischalten" zeigten - obwohl der Kauf laut Datenbank den ganzen Test
+  // freischaltet (siehe processing.js computeWeakTopics/loadDeepeningAccess).
+  // Ursache: der Stripe-Webhook (checkout.session.completed), der den Kauf
+  // erst als "completed" markiert, kann dem Redirect zurück in die App noch
+  // hinterherhinken (beobachtet: bis zu ~28 Sekunden) - der einmalige Fetch
+  // beim Mount sah den Kauf dann noch als "pending". Deshalb hier nach einer
+  // Checkout-Rückkehr das Ergebnis mehrfach neu laden, bis entweder alle
+  // Schwachthemen als freigeschaltet zurückkommen oder ein Zeitlimit
+  // erreicht ist.
+  useEffect(() => {
+    if (!cameFromCheckout) return undefined;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 8; // 8 x 4s = 32s, deckt die beobachtete Verzögerung ab
+
+    const poll = async () => {
+      if (cancelled) return;
+      attempts++;
+      const updated = await loadSubmission();
+      if (cancelled) return;
+      const stillLocked = updated?.weakTopics?.some((t) => !t.unlocked);
+      if (stillLocked && attempts < maxAttempts) {
+        setTimeout(poll, 4000);
+      }
+    };
+
+    const timer = setTimeout(poll, 4000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameFromCheckout]);
+
   const loadSubmission = async () => {
-    setLoading(true);
     setError('');
     try {
       const token = localStorage.getItem('token');
@@ -56,8 +99,10 @@ export default function ResultsPage() {
       }
 
       setSubmission(data.submission);
+      return data.submission;
     } catch (err) {
       setError(err.message);
+      return null;
     } finally {
       setLoading(false);
     }

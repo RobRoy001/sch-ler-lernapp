@@ -391,7 +391,7 @@ router.get('/submissions', authCheck, asyncHandler(async (req, res) => {
     const submissions = rows.map(row => ({
       id: row.id,
       testId: row.test_id,
-      testTitle: row.test_title || 'Generierter Test',
+      testTitle: row.title || 'Generierter Test',
       correctCount: row.correct_count,
       totalQuestions: row.total_questions,
       accuracy: row.accuracy,
@@ -439,7 +439,7 @@ router.get('/submissions/:submissionId', authCheck, asyncHandler(async (req, res
       submission: {
         id: submission.id,
         testId: submission.test_id,
-        testTitle: submission.testTitle || 'Generierter Test',
+        testTitle: submission.title || 'Generierter Test',
         correctCount: submission.correct_count,
         totalQuestions: submission.total_questions,
         accuracy: submission.accuracy,

@@ -58,7 +58,7 @@ router.post('/upload', authCheck, upload.single('file'), (req, res) => {
 // mehr verloren).
 router.post('/sources', authCheck, asyncHandler(async (req, res) => {
   try {
-    const { content_type, reference_id, reference_book_id, file_id, test_format, test_scope, consent } = req.body;
+    const { content_type, reference_id, reference_book_id, file_id, test_format, test_scope, consent, title } = req.body;
 
     if (!content_type) {
       return res.status(400).json({ error: 'content_type erforderlich' });
@@ -68,7 +68,12 @@ router.post('/sources', authCheck, asyncHandler(async (req, res) => {
       userId: req.user.id,
       content_type,
       reference_id,
-      reference_book_id
+      reference_book_id,
+      // ✅ Fix (2026-09-06): Robert's Titel-Eingabe aus UploadPage.jsx wurde
+      // vorher nirgends entgegengenommen (ging nach POST /upload verloren,
+      // POST /sources kannte das Feld gar nicht) - jetzt wird sie hier
+      // direkt mit der Source verknüpft, siehe store.js/migrations.js.
+      title: typeof title === 'string' ? title.trim().slice(0, 255) || null : null
     });
 
     if (file_id !== undefined && file_id !== null && file_id !== '') {
@@ -100,16 +105,17 @@ router.post('/sources', authCheck, asyncHandler(async (req, res) => {
 }));
 
 // ✅ GET /api/content/sources - alle hochgeladenen Aufgaben des Nutzers
-// (wird von der TasksOverviewPage im Frontend gebraucht). Die sources-
-// Tabelle hat keine eigene title/description Spalte - hier aus
-// content_type + id abgeleitet, statt sie künstlich in der DB zu ergänzen.
+// (wird von der TasksOverviewPage im Frontend gebraucht). ✅ Fix
+// (2026-09-06): nutzt jetzt den echten von Robert eingegebenen Titel
+// (sources.title), sofern vorhanden - der abgeleitete "content_type #id"
+// bleibt nur als Fallback für ältere Sources ohne Titel.
 router.get('/sources', authCheck, asyncHandler(async (req, res) => {
   const sources = await findSourcesByUser(req.user.id);
 
   res.json({
     sources: sources.map((s) => ({
       id: s.id,
-      title: `${s.content_type || 'Aufgabe'} #${s.id}`,
+      title: s.title || `${s.content_type || 'Aufgabe'} #${s.id}`,
       description: null,
       status: s.status,
       progress: s.progress || 0,
@@ -130,7 +136,7 @@ router.get('/sources/:id', authCheck, asyncHandler(async (req, res) => {
   res.json({
     source: {
       id: source.id,
-      title: `${source.content_type || 'Aufgabe'} #${source.id}`,
+      title: source.title || `${source.content_type || 'Aufgabe'} #${source.id}`,
       status: source.status,
       progress: source.progress || 0,
       created_at: source.created_at

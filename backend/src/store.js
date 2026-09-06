@@ -227,12 +227,17 @@ function nextFileId() {
   return Date.now();
 }
 
-async function createSource({ userId, content_type, reference_id, reference_book_id }) {
+// ✅ Fix (2026-09-06): "title" kommt jetzt vom Upload-Formular mit (siehe
+// UploadPage.jsx/content.js POST /sources) und wird auf der neuen
+// sources.title-Spalte gespeichert - vorher ging der von Robert eingegebene
+// Titel komplett verloren, das Dashboard zeigte deshalb immer nur
+// "Generierter Test".
+async function createSource({ userId, content_type, reference_id, reference_book_id, title }) {
   const result = await query(
-    `INSERT INTO sources (user_id, content_type, reference_id, reference_book_id, status, progress, created_at)
-     VALUES ($1, $2, $3, $4, 'pending', 0, NOW())
+    `INSERT INTO sources (user_id, content_type, reference_id, reference_book_id, title, status, progress, created_at)
+     VALUES ($1, $2, $3, $4, $5, 'pending', 0, NOW())
      RETURNING *`,
-    [userId, content_type, reference_id || null, reference_book_id || null]
+    [userId, content_type, reference_id || null, reference_book_id || null, title || null]
   );
   return result.rows[0];
 }
@@ -304,10 +309,19 @@ async function createSubmission({
   return result.rows[0];
 }
 
+// ✅ Fix (2026-09-06): JOIN auf sources ergänzt, um den echten von Robert
+// eingegebenen Titel zurückzugeben (test_id verweist im Mock-Modus direkt
+// auf sources.id, siehe processing.js POST /tests/:testId/submit) - vorher
+// gab es hier gar kein Titel-Feld, routes/processing.js griff auf ein nie
+// existierendes row.test_title zu und fiel deshalb immer auf "Generierter
+// Test" zurück.
 async function findSubmissionsByUser(userId) {
   const result = await query(
-    `SELECT id, test_id, correct_count, total_questions, accuracy, submitted_at
-     FROM test_submissions WHERE user_id = $1 ORDER BY submitted_at DESC`,
+    `SELECT ts.id, ts.test_id, ts.correct_count, ts.total_questions, ts.accuracy, ts.submitted_at, s.title
+     FROM test_submissions ts
+     LEFT JOIN sources s ON s.id = ts.test_id
+     WHERE ts.user_id = $1
+     ORDER BY ts.submitted_at DESC`,
     [userId]
   );
   return result.rows;
@@ -315,7 +329,10 @@ async function findSubmissionsByUser(userId) {
 
 async function findSubmissionById(submissionId, userId) {
   const result = await query(
-    'SELECT * FROM test_submissions WHERE id = $1 AND user_id = $2',
+    `SELECT ts.*, s.title
+     FROM test_submissions ts
+     LEFT JOIN sources s ON s.id = ts.test_id
+     WHERE ts.id = $1 AND ts.user_id = $2`,
     [submissionId, userId]
   );
   return result.rows[0];

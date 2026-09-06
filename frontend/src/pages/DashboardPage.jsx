@@ -201,12 +201,19 @@ export default function DashboardPage({ user, onLogout }) {
             </div>
           ) : (
             <div className="space-y-3">
+              {/* ✅ Fix (2026-09-06): Ergebnis-Karten waren bisher reine
+                  <div>s ohne jede Interaktion - Robert konnte nicht
+                  anklicken, um sich anzusehen, wo die Fehler waren
+                  (AnswerReview/DeepeningPanel existieren bereits auf
+                  ResultsPage.jsx, waren von hier aus aber nicht erreichbar).
+                  Jetzt ein Link auf genau diese Route. */}
               {filteredSubmissions.map((submission) => (
-                <div
+                <Link
                   key={submission.id}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-md border border-gray-100 hover:bg-gray-100 transition"
+                  to={`/results/${submission.id}`}
+                  className="flex items-center justify-between p-4 bg-gray-50 rounded-md border border-gray-100 hover:bg-gray-100 hover:border-primary/30 transition cursor-pointer"
                 >
-                  <div className="flex items-center gap-3 flex-1">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
                     {submission.is_correct ? (
                       <CheckCircle size={20} className="text-success flex-shrink-0" />
                     ) : (
@@ -238,7 +245,7 @@ export default function DashboardPage({ user, onLogout }) {
                       <p className="text-xs text-error font-semibold">Falsch</p>
                     )}
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}
