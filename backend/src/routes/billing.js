@@ -80,10 +80,13 @@ async function getOrCreateStripeCustomerId(userId, email) {
 // Vertiefungsmodus-Einzelkauf erstellen, gibt die Stripe-Checkout-URL
 // zurück, zu der das Frontend weiterleitet.
 router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async (req, res) => {
-  const { type, topic } = req.body;
+  const { type, topic, submissionId } = req.body;
 
   if (type !== 'pro' && type !== 'vertiefung') {
     return res.status(400).json({ error: 'type muss "pro" oder "vertiefung" sein' });
+  }
+  if (type === 'vertiefung' && !topic) {
+    return res.status(400).json({ error: 'topic ist für den Vertiefungsmodus-Einzelkauf erforderlich' });
   }
 
   const priceId = type === 'pro' ? STRIPE_PRICE_PRO : STRIPE_PRICE_VERTIEFUNG;
@@ -95,12 +98,27 @@ router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async 
 
   const customerId = await getOrCreateStripeCustomerId(req.user.id, req.user.email);
 
+  // ✅ Vertiefungsmodus (2026-09-06): nach der Zahlung soll der Nutzer direkt
+  // wieder auf der Ergebnisseite landen, bei der er das Thema freischalten
+  // wollte, statt generisch in den Einstellungen - deshalb eigene
+  // success_url für type "vertiefung", inkl. Thema als Query-Parameter,
+  // damit die Ergebnisseite die Vertiefung direkt automatisch anstößt
+  // (siehe frontend DeepeningPanel.jsx).
+  const successUrl =
+    type === 'vertiefung' && submissionId
+      ? `${FRONTEND_URL}/results/${submissionId}?billing=success&topic=${encodeURIComponent(topic)}`
+      : `${FRONTEND_URL}/settings?billing=success`;
+  const cancelUrl =
+    type === 'vertiefung' && submissionId
+      ? `${FRONTEND_URL}/results/${submissionId}?billing=cancel`
+      : `${FRONTEND_URL}/settings?billing=cancel`;
+
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     mode: type === 'pro' ? 'subscription' : 'payment',
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${FRONTEND_URL}/settings?billing=success`,
-    cancel_url: `${FRONTEND_URL}/settings?billing=cancel`,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
     metadata: {
       userId: String(req.user.id),
       productType: type,

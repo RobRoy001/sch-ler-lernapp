@@ -730,6 +730,52 @@ async function findPurchasesByUser(userId) {
   return result.rows;
 }
 
+// ============================================================================
+// VERTIEFUNGSMODUS (2026-09-06, siehe LernApp-Preismodell-Nachhilfe-
+// Klassenmodell-2026-09-02.md Abschnitt 4, und routes/deepening.js)
+// ============================================================================
+
+async function createDeepening({ userId, submissionId, topic, explanation, practiceQuestions }) {
+  const result = await query(
+    `INSERT INTO deepenings (user_id, submission_id, topic, explanation, practice_questions, created_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
+     RETURNING *`,
+    [userId, submissionId || null, topic, explanation, JSON.stringify(practiceQuestions)]
+  );
+  return result.rows[0];
+}
+
+// Findet eine schon vorhandene, fertige Vertiefung zu (Nutzer, Thema) - bei
+// erneutem Aufruf derselben Schwäche wird nicht erneut KI-generiert/bezahlt
+// (siehe routes/deepening.js, POST /generate).
+async function findLatestDeepeningByTopic(userId, topic) {
+  const result = await query(
+    `SELECT * FROM deepenings WHERE user_id = $1 AND topic = $2
+     ORDER BY created_at DESC LIMIT 1`,
+    [userId, topic]
+  );
+  return result.rows[0];
+}
+
+async function findDeepeningById(id, userId) {
+  const result = await query(
+    'SELECT * FROM deepenings WHERE id = $1 AND user_id = $2',
+    [id, userId]
+  );
+  return result.rows[0];
+}
+
+async function completeDeepeningRetest(id, { correctCount, totalQuestions }) {
+  const result = await query(
+    `UPDATE deepenings
+     SET retest_correct_count = $1, retest_total = $2, retest_completed_at = NOW()
+     WHERE id = $3
+     RETURNING *`,
+    [correctCount, totalQuestions, id]
+  );
+  return result.rows[0];
+}
+
 module.exports = {
   // Users / Auth
   createUser,
@@ -746,6 +792,12 @@ module.exports = {
   findPurchaseBySessionId,
   completePurchase,
   findPurchasesByUser,
+
+  // Vertiefungsmodus
+  createDeepening,
+  findLatestDeepeningByTopic,
+  findDeepeningById,
+  completeDeepeningRetest,
 
   // GDPR
   exportUserData,

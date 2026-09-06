@@ -58,6 +58,13 @@ function buildSchema(format) {
   // multiple_choice / fill_gap / mixed teilen sich dasselbe Ziel-Schema -
   // "options" ist bei fill_gap null (siehe questionValidator.js, das
   // dasselbe Feld genauso interpretiert).
+  //
+  // ✅ Vertiefungsmodus (2026-09-06, siehe LernApp-Preismodell-Nachhilfe-
+  // Klassenmodell-2026-09-02.md Abschnitt 4.2): "topic" ist die vorher
+  // fehlende Voraussetzung dafür - ein kurzes Themen-/Konzept-Tag pro Frage
+  // (z.B. "Bruchrechnung - Erweitern/Kürzen"), damit falsch beantwortete
+  // Fragen nach dem Test nach Schwachthema gruppiert werden können (siehe
+  // routes/processing.js, computeWeakTopics).
   const allowedTypes = format === 'mixed' ? MC_FILLGAP_TYPES : [format];
   return {
     type: 'object',
@@ -72,9 +79,10 @@ function buildSchema(format) {
             question_text: { type: 'string' },
             options: { type: ['array', 'null'], items: { type: 'string' } },
             correct_answer: { type: 'string' },
-            explanation: { type: 'string' }
+            explanation: { type: 'string' },
+            topic: { type: 'string' }
           },
-          required: ['type', 'question_text', 'options', 'correct_answer', 'explanation'],
+          required: ['type', 'question_text', 'options', 'correct_answer', 'explanation', 'topic'],
           additionalProperties: false
         }
       }
@@ -106,11 +114,17 @@ function buildSystemPrompt({ format, scope, questionCount, avoidQuestions }) {
       ? `Vermeide inhaltlich folgende, bereits gestellte Fragen (stelle andere Fragen zum gleichen Thema, keine Wiederholungen): ${avoidQuestions.join(' | ')}`
       : '';
 
+  const topicInstruction =
+    format !== 'vocabulary'
+      ? 'Gib zusätzlich pro Frage ein Feld "topic" an: das konkrete Unterthema/Konzept dieser Frage in 2-5 Worten (z.B. "Bruchrechnung - Erweitern/Kürzen", nicht nur "Mathematik"). Verwende für inhaltlich zusammengehörige Fragen exakt denselben "topic"-Text, damit sie später gruppiert werden können.'
+      : '';
+
   return [
     'Du erstellst Testfragen für Schüler:innen auf Deutsch, ausschließlich basierend auf dem folgenden Text.',
     'Erfinde keine Inhalte, die nicht im Text stehen oder direkt daraus ableitbar sind.',
     formatInstructions[format] || formatInstructions.multiple_choice,
     scopeInstruction,
+    topicInstruction,
     avoidInstruction
   ]
     .filter(Boolean)
@@ -149,7 +163,8 @@ function normalizeQuestion(raw, format, index) {
     question_text: raw.question_text,
     options: Array.isArray(raw.options) ? raw.options : null,
     correct_answer: raw.correct_answer,
-    explanation: raw.explanation || ''
+    explanation: raw.explanation || '',
+    topic: raw.topic || 'Allgemein'
   };
 }
 
@@ -228,4 +243,118 @@ async function generateQuestions({ text, format = 'multiple_choice', scope = 'st
   };
 }
 
-module.exports = { generateQuestions, SCOPE_QUESTION_COUNT };
+// ---- Vertiefungsmodus (2026-09-06) ----
+//
+// Erklärung + 3-5 neue Übungsfragen zu genau einem erkannten Schwachthema
+// (siehe claude/LernApp-Preismodell-Nachhilfe-Klassenmodell-2026-09-02.md
+// Abschnitt 4.1). Bewusst NICHT auf den ursprünglichen Quelltext gestützt
+// (der wird nirgends dauerhaft gespeichert, siehe routes/processing.js -
+// nur der extrahierte Test bleibt erhalten) - stattdessen genügen die
+// konkret falsch beantworteten Fragen samt ihrer schon vorhandenen
+// Erklärung als Grundlage, das hält die Funktion einfach und braucht keine
+// zusätzliche Text-Persistierung.
+const DEEPENING_SCHEMA = {
+  type: 'object',
+  properties: {
+    explanation: { type: 'string' },
+    practice_questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          question_text: { type: 'string' },
+          options: { type: 'array', items: { type: 'string' } },
+          correct_answer: { type: 'string' },
+          explanation: { type: 'string' }
+        },
+        required: ['question_text', 'options', 'correct_answer', 'explanation'],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ['explanation', 'practice_questions'],
+  additionalProperties: false
+};
+
+function buildDeepeningPrompt(topic, wrongQuestions) {
+  const examples = wrongQuestions
+    .map(
+      (q, i) =>
+        `${i + 1}. Frage: ${q.question_text}\n   Schüler:in antwortete: ${q.answer || '(keine Antwort)'}\n   Richtige Antwort: ${q.correct_answer}${q.explanation ? `\n   Bisherige Erklärung: ${q.explanation}` : ''}`
+    )
+    .join('\n');
+
+  return [
+    'Du bist ein geduldiger KI-Nachhilfelehrer für Schüler:innen auf Deutsch.',
+    `Eine Schülerin/ein Schüler hat beim Thema "${topic}" folgende Fragen falsch beantwortet:`,
+    examples,
+    'Erkläre das zugrunde liegende Konzept verständlich und Schritt für Schritt, gerne mit einer einfachen Analogie, so dass die Wissenslücke geschlossen wird, die zu genau diesen Fehlern geführt hat. Sprich die Schülerin/den Schüler direkt an ("Du").',
+    'Erstelle danach 3 bis 5 NEUE Multiple-Choice-Übungsfragen (genau 4 Optionen je Frage) ausschließlich zu diesem Thema, mit anderer Formulierung als die Originalfragen, damit sie als Erfolgskontrolle taugen.'
+  ].join('\n\n');
+}
+
+async function generateDeepening({ topic, wrongQuestions }) {
+  if (!OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY ist nicht konfiguriert');
+  }
+  if (!topic || !Array.isArray(wrongQuestions) || wrongQuestions.length === 0) {
+    throw new Error('topic und wrongQuestions sind erforderlich');
+  }
+
+  const response = await fetch(OPENAI_CHAT_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      messages: [{ role: 'system', content: buildDeepeningPrompt(topic, wrongQuestions) }],
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'deepening', schema: DEEPENING_SCHEMA, strict: true }
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '');
+    throw new Error(`OpenAI-Aufruf fehlgeschlagen (${response.status}): ${errBody.slice(0, 300)}`);
+  }
+
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('OpenAI-Antwort enthält keinen Inhalt');
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (e) {
+    throw new Error('OpenAI-Antwort ist kein valides JSON');
+  }
+
+  const rawQuestions = Array.isArray(parsed.practice_questions) ? parsed.practice_questions : [];
+  const normalized = rawQuestions.map((q, idx) => ({
+    id: idx + 1,
+    type: 'multiple_choice',
+    question_text: q.question_text,
+    options: Array.isArray(q.options) ? q.options : null,
+    correct_answer: q.correct_answer,
+    explanation: q.explanation || '',
+    topic
+  }));
+
+  const { valid, ok } = validateGeneratedQuestions(normalized);
+  if (!ok) {
+    throw new Error('Zu wenige gültige Übungsfragen von der KI erhalten');
+  }
+
+  return {
+    explanation: parsed.explanation || '',
+    practiceQuestions: valid.map((q, idx) => ({ ...q, id: idx + 1 }))
+  };
+}
+
+module.exports = { generateQuestions, generateDeepening, SCOPE_QUESTION_COUNT };

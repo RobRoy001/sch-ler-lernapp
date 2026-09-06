@@ -155,9 +155,38 @@ async function runMigrations() {
     )
   `);
 
+  // ---- Vertiefungsmodus (2026-09-06, siehe LernApp-Preismodell-Nachhilfe-
+  // Klassenmodell-2026-09-02.md Abschnitt 4) ----
+  //
+  // Ein Datensatz pro generierter Vertiefung zu einem Schwachthema:
+  // KI-Erklärung + 3-5 neue Übungsfragen (dienen zugleich als Nachtest, siehe
+  // routes/deepening.js-Kommentar für die bewusste Vereinfachung ggü. dem
+  // Konzept-Dokument). "submission_id" verweist auf den Test, bei dem das
+  // Thema als Schwäche erkannt wurde, ist aber NICHT die alleinige
+  // Zugriffs-Bedingung: Freischaltung läuft über users.subscription_status
+  // ('active' = Pro/Familie/Klassen-Abo, unbegrenzt) oder eine passende
+  // completed-Zeile in purchases (product_type='vertiefung', topic-Text
+  // exakt übereinstimmend, siehe Kommentar in deepening.js zu den Grenzen
+  // dieses einfachen String-Abgleichs).
+  await query(`
+    CREATE TABLE IF NOT EXISTS deepenings (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      submission_id INTEGER REFERENCES test_submissions(id) ON DELETE SET NULL,
+      topic VARCHAR(255) NOT NULL,
+      explanation TEXT NOT NULL,
+      practice_questions JSONB NOT NULL,
+      retest_correct_count INTEGER,
+      retest_total INTEGER,
+      retest_completed_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
   console.log('✅ Eltern-Board Tabellen geprüft/angelegt (parents, parent_child_links).');
   console.log('✅ Lehrer-Portal Tabellen geprüft/angelegt (teachers, classes, class_memberships, class_sources, class_source_submissions).');
   console.log('✅ Zahlungs-Spalten/Tabellen geprüft/angelegt (users.stripe_*, purchases).');
+  console.log('✅ Vertiefungsmodus-Tabelle geprüft/angelegt (deepenings).');
 }
 
 module.exports = { runMigrations };

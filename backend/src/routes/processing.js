@@ -5,7 +5,9 @@ const {
   updateSource,
   createSubmission,
   findSubmissionsByUser,
-  findSubmissionById
+  findSubmissionById,
+  findUserBillingStatus,
+  findPurchasesByUser
 } = require('../store');
 const authCheck = require('../middleware/authCheck');
 const asyncHandler = require('../utils/asyncHandler');
@@ -13,6 +15,52 @@ const { sourceFiles } = require('../utils/pendingUploads');
 const { extractText } = require('../services/textExtraction');
 const { sanitizeForOpenAI } = require('../utils/contentSanitizer');
 const { generateQuestions } = require('../services/questionGenerator');
+
+// ✅ Vertiefungsmodus (2026-09-06, siehe LernApp-Preismodell-Nachhilfe-
+// Klassenmodell-2026-09-02.md Abschnitt 4.1): gruppiert die falsch
+// beantworteten Fragen einer Einreichung nach ihrem "topic"-Tag (siehe
+// questionGenerator.js) und markiert pro Thema, ob es für diesen Nutzer
+// schon freigeschaltet ist (aktives Pro-Abo ODER ein abgeschlossener
+// 2,49-€-Einzelkauf für genau dieses Thema, siehe routes/deepening.js).
+// Wird sowohl direkt nach dem Einreichen (POST .../submit) als auch beim
+// späteren erneuten Aufruf (GET .../submissions/:id) verwendet, damit beide
+// Stellen exakt dieselbe Logik nutzen statt sie zu duplizieren.
+function computeWeakTopics(gradedAnswers, { isPro, purchasedTopics }) {
+  const byTopic = new Map();
+
+  for (const a of gradedAnswers) {
+    if (!a.topic) continue; // Vokabelfragen o.ä. ohne Themen-Tag - siehe normalizeQuestion
+    if (!byTopic.has(a.topic)) {
+      byTopic.set(a.topic, { topic: a.topic, wrongCount: 0, totalCount: 0 });
+    }
+    const entry = byTopic.get(a.topic);
+    entry.totalCount++;
+    if (!a.is_correct) entry.wrongCount++;
+  }
+
+  return Array.from(byTopic.values())
+    .filter((t) => t.wrongCount > 0)
+    .map((t) => ({
+      ...t,
+      unlocked: isPro || purchasedTopics.has(t.topic)
+    }))
+    .sort((a, b) => b.wrongCount - a.wrongCount);
+}
+
+// Lädt Pro-Status + bereits gekaufte Vertiefungs-Themen eines Nutzers -
+// gebündelt, weil beide Werte für computeWeakTopics() immer zusammen
+// gebraucht werden.
+async function loadDeepeningAccess(userId) {
+  const [billing, purchases] = await Promise.all([
+    findUserBillingStatus(userId),
+    findPurchasesByUser(userId)
+  ]);
+  const isPro = billing?.subscription_status === 'active';
+  const purchasedTopics = new Set(
+    purchases.filter((p) => p.product_type === 'vertiefung' && p.status === 'completed').map((p) => p.topic)
+  );
+  return { isPro, purchasedTopics };
+}
 
 // ✅ Sicherheitsaudit Befund 10: es gibt hier keinen "Mock-Modus"-Zweig mehr
 // (vorher: usingMockMode-Flag + eine separate, nur lokal im Prozess
@@ -50,7 +98,8 @@ function generateMockTest(sourceId) {
         question_text: 'Was ist 6 × 7?',
         options: JSON.stringify(['40', '42', '48', '54']),
         correct_answer: '42',
-        explanation: '6 × 7 = 42.'
+        explanation: '6 × 7 = 42.',
+        topic: 'Mathematik - Einmaleins'
       },
       {
         id: 2,
@@ -58,14 +107,16 @@ function generateMockTest(sourceId) {
         question_text: 'Welches ist die Hauptstadt von Deutschland?',
         options: JSON.stringify(['München', 'Hamburg', 'Berlin', 'Köln']),
         correct_answer: 'Berlin',
-        explanation: 'Berlin ist seit 1990 die Hauptstadt der Bundesrepublik Deutschland.'
+        explanation: 'Berlin ist seit 1990 die Hauptstadt der Bundesrepublik Deutschland.',
+        topic: 'Erdkunde - Hauptstädte'
       },
       {
         id: 3,
         type: 'fill_gap',
         question_text: 'Die Sonne ist ein ______.',
         correct_answer: 'Stern',
-        explanation: 'Die Sonne ist der Stern im Zentrum unseres Sonnensystems.'
+        explanation: 'Die Sonne ist der Stern im Zentrum unseres Sonnensystems.',
+        topic: 'Astronomie - Sonnensystem'
       }
     ]
   };
@@ -226,13 +277,28 @@ router.post('/tests/:testId/submit', authCheck, asyncHandler(async (req, res) =>
     );
 
     let correctCount = 0;
+    // ✅ Vertiefungsmodus (2026-09-06): gradedAnswers trägt jetzt zusätzlich
+    // topic/question_text/correct_answer/explanation direkt mit (statt nur
+    // question_id/answer/is_correct) - dadurch lässt sich die Schwachthemen-
+    // Erkennung (computeWeakTopics oben) und die spätere Ergebnis-Anzeige
+    // (GET /submissions/:id, siehe unten) allein aus answers_json aufbauen,
+    // ohne bei jedem Aufruf erneut über die Source zurück zu den
+    // ursprünglichen Fragen joinen zu müssen.
     const gradedAnswers = questions.map((q) => {
       const userAnswer = answerByQuestionId.get(String(q.id)) || '';
       const isCorrect =
         !!userAnswer &&
         userAnswer.toLowerCase().trim() === String(q.correct_answer).toLowerCase().trim();
       if (isCorrect) correctCount++;
-      return { question_id: q.id, answer: userAnswer, is_correct: isCorrect };
+      return {
+        question_id: q.id,
+        answer: userAnswer,
+        is_correct: isCorrect,
+        topic: q.type === 'vocabulary' ? null : q.topic || null,
+        question_text: q.question_text,
+        correct_answer: q.correct_answer,
+        explanation: q.explanation || ''
+      };
     });
 
     const totalQuestions = questions.length;
@@ -248,6 +314,9 @@ router.post('/tests/:testId/submit', authCheck, asyncHandler(async (req, res) =>
       timeTaken: timeTaken || 0
     });
 
+    const access = await loadDeepeningAccess(userId);
+    const weakTopics = computeWeakTopics(gradedAnswers, access);
+
     return res.json({
       success: true,
       message: 'Test erfolgreich eingereicht',
@@ -257,7 +326,8 @@ router.post('/tests/:testId/submit', authCheck, asyncHandler(async (req, res) =>
         totalQuestions: submission.total_questions,
         accuracy: submission.accuracy,
         submittedAt: submission.submitted_at
-      }
+      },
+      weakTopics
     });
   } catch (error) {
     console.error('Fehler beim Test-Submit:', error);
@@ -337,6 +407,17 @@ router.get('/submissions/:submissionId', authCheck, asyncHandler(async (req, res
       return res.status(404).json({ error: 'Einreichung nicht gefunden' });
     }
 
+    // ✅ Fix (2026-09-06): "questions" kam vorher immer als leeres Array
+    // zurück - submission.questions existiert als Feld gar nicht (weder in
+    // test_submissions noch über einen Join in findSubmissionById), das war
+    // schon vor dem Vertiefungsmodus ein stiller Bug. answers_json enthält
+    // seit dem Submit-Fix oben (topic/question_text/correct_answer/
+    // explanation direkt mitgespeichert) alles Nötige für die
+    // Ergebnis-Anzeige, ganz ohne Join zurück zur Source.
+    const gradedAnswers = submission.answers_json || [];
+    const access = await loadDeepeningAccess(userId);
+    const weakTopics = computeWeakTopics(gradedAnswers, access);
+
     res.json({
       success: true,
       submission: {
@@ -348,8 +429,9 @@ router.get('/submissions/:submissionId', authCheck, asyncHandler(async (req, res
         accuracy: submission.accuracy,
         timeTaken: submission.time_taken,
         submittedAt: submission.submitted_at,
-        userAnswers: submission.answers_json || [],
-        questions: submission.questions || []
+        userAnswers: gradedAnswers,
+        questions: gradedAnswers,
+        weakTopics
       }
     });
   } catch (error) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, XCircle, AlertTriangle, RotateCcw } from 'lucide-react';
 import Logo from '../components/Logo';
+import DeepeningPanel from '../components/DeepeningPanel';
 import { API_BASE_URL } from '../config/api';
 
 // Hinweis: im aktuellen Backend (processing.js, Mock-Testgenerierung)
@@ -124,9 +125,13 @@ export default function TestPlayer({ user }) {
       }
 
       setResults({
+        submissionId: data.submission.submissionId,
         totalQuestions: data.submission.totalQuestions,
         correctAnswers: data.submission.correctCount,
-        accuracy: data.submission.accuracy
+        accuracy: data.submission.accuracy,
+        // ✅ Vertiefungsmodus (2026-09-06): kommt direkt in der Submit-
+        // Antwort mit (siehe backend routes/processing.js, computeWeakTopics)
+        weakTopics: data.weakTopics || []
       });
       setSubmitted(true);
     } catch (err) {
@@ -377,6 +382,10 @@ export default function TestPlayer({ user }) {
               Zum Dashboard
             </button>
           </div>
+        </div>
+
+        <div className="text-left">
+          <DeepeningPanel submissionId={results.submissionId} weakTopics={results.weakTopics} />
         </div>
       </div>
     </div>

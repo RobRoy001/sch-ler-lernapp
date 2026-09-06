@@ -40,6 +40,7 @@ const parentRouter = require('./routes/parent');
 const teacherRouter = require('./routes/teacher');
 const classesRouter = require('./routes/classes');
 const { router: billingRouter, handleStripeWebhook } = require('./routes/billing');
+const deepeningRouter = require('./routes/deepening');
 
 // Unter diesem Alter ist laut Art. 8 DSGVO eine Elternzustimmung nötig,
 // bevor ein Konto aktiv genutzt werden darf (Sicherheitsaudit Kritisch #5).
@@ -516,6 +517,9 @@ app.use('/api/classes', classesRouter);
 // JSON-Parser registriert (siehe Kommentar dort), taucht deshalb hier
 // nicht nochmal auf.
 app.use('/api/billing', billingRouter);
+
+// ✅ Vertiefungsmodus Routes (2026-09-06)
+app.use('/api/deepening', deepeningRouter);
 
 // Hinweis: die temporäre Admin-Aufräum-Route (routes/admin.js,
 // ADMIN_CLEANUP_SECRET) wurde nach dem einmaligen Testkonten-Löschen
