@@ -1,11 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, LogOut, User, Download, Trash2, AlertTriangle, Users, X, GraduationCap, ChevronRight } from 'lucide-react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, LogOut, User, Download, Trash2, AlertTriangle, Users, X, GraduationCap, ChevronRight, Crown, CheckCircle2 } from 'lucide-react';
 import Logo from '../components/Logo';
 import { API_BASE_URL } from '../config/api';
 
 export default function SettingsPage({ user, onLogout }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // ✅ Stripe-Billing (2026-09-06): "Kapiert Pro"-Status + Upgrade-Button.
+  // Nutzt die in backend/src/routes/billing.js gebauten Endpunkte. Der
+  // eigentliche Vertiefungsmodus-Einzelkauf bekommt seinen eigenen Kauf-
+  // Button erst dort, wo das Feature selbst entsteht (Themen-Auswahl) -
+  // hier geht es nur um das Jahres-Abo.
+  const [billing, setBilling] = useState(null);
+  const [billingLoading, setBillingLoading] = useState(true);
+  const [billingError, setBillingError] = useState('');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const billingBanner = searchParams.get('billing'); // "success" | "cancel" | null
 
   const [exportLoading, setExportLoading] = useState(false);
   const [exportError, setExportError] = useState('');
@@ -72,7 +85,74 @@ export default function SettingsPage({ user, onLogout }) {
       }
     };
     loadClasses();
+
+    const loadBilling = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/billing/status`, {
+          credentials: 'include'
+        });
+        // 404/503 heißt: Billing-Route existiert (noch) nicht oder Stripe ist
+        // nicht konfiguriert (siehe config/stripe.js) - dann einfach so tun,
+        // als wäre der Nutzer im kostenlosen Plan, statt einen Fehler zu zeigen.
+        if (response.status === 404 || response.status === 503) {
+          setBilling({ subscriptionStatus: 'free', purchases: [] });
+          return;
+        }
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Mitgliedschaftsstatus konnte nicht geladen werden');
+        }
+        setBilling(data);
+      } catch (err) {
+        setBillingError(err.message);
+      } finally {
+        setBillingLoading(false);
+      }
+    };
+    loadBilling();
   }, []);
+
+  const handleUpgrade = async () => {
+    setCheckoutLoading(true);
+    setBillingError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/billing/checkout`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'pro' })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Checkout konnte nicht gestartet werden');
+      window.location.href = data.url;
+    } catch (err) {
+      setBillingError(err.message);
+      setCheckoutLoading(false);
+    }
+  };
+
+  const handleManageBilling = async () => {
+    setPortalLoading(true);
+    setBillingError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/billing/portal`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Kundenportal konnte nicht geöffnet werden');
+      window.location.href = data.url;
+    } catch (err) {
+      setBillingError(err.message);
+      setPortalLoading(false);
+    }
+  };
+
+  const dismissBillingBanner = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('billing');
+    setSearchParams(next, { replace: true });
+  };
 
   const handleRevokeParent = async (parentId) => {
     setRevokingId(parentId);
@@ -210,6 +290,75 @@ export default function SettingsPage({ user, onLogout }) {
         <div className="flex items-center gap-3 mb-8">
           <Logo size={32} />
           <h1 className="font-display text-2xl font-bold text-gray-900">Einstellungen</h1>
+        </div>
+
+        {billingBanner === 'success' && (
+          <div className="flex items-start justify-between gap-3 bg-success-light border border-success/30 rounded-lg p-4 mb-6">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 size={18} className="text-success-dark flex-shrink-0 mt-0.5" />
+              <p className="text-success-dark text-sm">
+                Zahlung erfolgreich! Dein Kapiert Pro-Zugang wird in Kürze aktiv.
+              </p>
+            </div>
+            <button onClick={dismissBillingBanner} className="text-success-dark/60 hover:text-success-dark flex-shrink-0">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        {billingBanner === 'cancel' && (
+          <div className="flex items-start justify-between gap-3 bg-gray-100 border border-gray-200 rounded-lg p-4 mb-6">
+            <p className="text-gray-600 text-sm">Der Bezahlvorgang wurde abgebrochen, es wurde nichts abgebucht.</p>
+            <button onClick={dismissBillingBanner} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        <div className="bg-cream border border-gray-100 rounded-lg p-6 shadow-sm mb-6">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-gray-400 mb-4">
+            <Crown size={14} /> Mitgliedschaft
+          </h2>
+
+          {billingLoading && <p className="text-gray-400 text-sm">Wird geladen…</p>}
+
+          {!billingLoading && billing?.subscriptionStatus === 'active' && (
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <p className="text-gray-900 font-semibold text-sm">Kapiert Pro ist aktiv</p>
+                {billing.subscriptionCurrentPeriodEnd && (
+                  <p className="text-gray-500 text-xs mt-0.5">
+                    Verlängert sich am {new Date(billing.subscriptionCurrentPeriodEnd).toLocaleDateString('de-DE')}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={handleManageBilling}
+                disabled={portalLoading}
+                className="bg-white border border-gray-200 hover:border-gray-300 text-gray-700 px-5 py-2.5 rounded-md font-semibold text-sm transition disabled:opacity-60"
+              >
+                {portalLoading ? 'Wird geöffnet…' : 'Abo verwalten'}
+              </button>
+            </div>
+          )}
+
+          {!billingLoading && billing?.subscriptionStatus !== 'active' && (
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <p className="text-gray-900 font-semibold text-sm">Aktuell: Kostenloser Zugang</p>
+                <p className="text-gray-500 text-xs mt-0.5">Mit Kapiert Pro bekommst du erweiterte Funktionen.</p>
+              </div>
+              <button
+                onClick={handleUpgrade}
+                disabled={checkoutLoading}
+                className="flex items-center gap-2 bg-primary hover:bg-primary-dark text-white px-5 py-2.5 rounded-md font-semibold text-sm transition disabled:opacity-60"
+              >
+                <Crown size={16} />
+                {checkoutLoading ? 'Wird geöffnet…' : 'Jetzt upgraden'}
+              </button>
+            </div>
+          )}
+
+          {billingError && <p className="text-error-dark text-sm mt-3">{billingError}</p>}
         </div>
 
         <div className="bg-cream border border-gray-100 rounded-lg p-6 shadow-sm mb-6">
