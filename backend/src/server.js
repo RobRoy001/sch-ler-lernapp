@@ -39,6 +39,7 @@ const contentRouter = require('./routes/content');
 const parentRouter = require('./routes/parent');
 const teacherRouter = require('./routes/teacher');
 const classesRouter = require('./routes/classes');
+const { router: billingRouter, handleStripeWebhook } = require('./routes/billing');
 
 // Unter diesem Alter ist laut Art. 8 DSGVO eine Elternzustimmung nötig,
 // bevor ein Konto aktiv genutzt werden darf (Sicherheitsaudit Kritisch #5).
@@ -68,6 +69,15 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// ✅ Stripe-Webhook (2026-09-04, siehe routes/billing.js): MUSS vor dem
+// globalen express.json() registriert werden. stripe.webhooks.constructEvent()
+// prüft die Signatur gegen den unveränderten Roh-Body - würde express.json()
+// den Body vorher schon geparst haben, wäre der Rohtext weg und jede
+// Signaturprüfung schlägt fehl. express.raw() gilt hier bewusst nur für
+// genau diesen einen Pfad, alle anderen Routen bekommen weiterhin normales
+// JSON über den Parser unten.
+app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
@@ -500,6 +510,12 @@ app.use('/api/parent', parentRouter);
 // ✅ Lehrer-Portal Routes (2026-09-03)
 app.use('/api/teacher', teacherRouter);
 app.use('/api/classes', classesRouter);
+
+// ✅ Zahlungen/Stripe (2026-09-04) - Checkout/Status/Kundenportal, alle mit
+// normalem JSON-Body. Der Webhook-Pfad selbst wird oben separat VOR dem
+// JSON-Parser registriert (siehe Kommentar dort), taucht deshalb hier
+// nicht nochmal auf.
+app.use('/api/billing', billingRouter);
 
 // Hinweis: die temporäre Admin-Aufräum-Route (routes/admin.js,
 // ADMIN_CLEANUP_SECRET) wurde nach dem einmaligen Testkonten-Löschen

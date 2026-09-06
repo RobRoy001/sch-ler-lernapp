@@ -112,8 +112,52 @@ async function runMigrations() {
     )
   `);
 
+  // ---- Zahlungen/Stripe (2026-09-04, siehe LernApp-Vollaudit-2026-09-03.md,
+  // Plan für nächste Woche) ----
+  //
+  // "users" ist eine der drei Legacy-Tabellen, die nicht über dieses
+  // Migrations-System entstanden sind (siehe store.js-Kommentar am
+  // Dateianfang) - ADD COLUMN IF NOT EXISTS funktioniert trotzdem genauso
+  // sicher/wiederholbar wie CREATE TABLE IF NOT EXISTS oben, solange die
+  // Tabelle selbst schon existiert.
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255)
+  `);
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(50) NOT NULL DEFAULT 'free'
+  `);
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_id VARCHAR(255)
+  `);
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_current_period_end TIMESTAMP
+  `);
+
+  // Eigene Tabelle statt Wiederverwendung von "sources": ein Kauf ist kein
+  // Upload, sondern ein Zahlungsvorgang, der potenziell mehrfach pro Nutzer
+  // vorkommt (jeder Vertiefungsmodus-Einzelkauf ist ein eigener Datensatz).
+  // "topic" ist bewusst nullable - der Vertiefungsmodus selbst (Themen-Tags
+  // pro Frage, siehe Preismodell-Dokument Abschnitt 4) ist noch nicht
+  // gebaut, das Feld ist hier schon vorgesehen, um beim späteren Bau keine
+  // weitere Schema-Änderung zu brauchen.
+  await query(`
+    CREATE TABLE IF NOT EXISTS purchases (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      stripe_checkout_session_id VARCHAR(255) UNIQUE,
+      stripe_payment_intent_id VARCHAR(255),
+      product_type VARCHAR(50) NOT NULL,
+      topic VARCHAR(255),
+      amount_cents INTEGER,
+      status VARCHAR(50) NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMP
+    )
+  `);
+
   console.log('✅ Eltern-Board Tabellen geprüft/angelegt (parents, parent_child_links).');
   console.log('✅ Lehrer-Portal Tabellen geprüft/angelegt (teachers, classes, class_memberships, class_sources, class_source_submissions).');
+  console.log('✅ Zahlungs-Spalten/Tabellen geprüft/angelegt (users.stripe_*, purchases).');
 }
 
 module.exports = { runMigrations };

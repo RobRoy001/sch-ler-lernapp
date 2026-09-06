@@ -661,6 +661,75 @@ async function findClassSourceSubmissionByStudent(classSourceId, studentUserId) 
 // EXPORTS
 // ============================================================================
 
+// ============================================================================
+// ZAHLUNGEN / STRIPE (2026-09-04, siehe LernApp-Vollaudit-2026-09-03.md,
+// Plan für nächste Woche)
+// ============================================================================
+
+// Webhook-Events von Stripe tragen nur die Stripe-Customer-ID, nicht
+// unsere interne user_id - dieser Rückweg ist deshalb Pflicht für jeden
+// Subscription-Webhook-Handler (siehe routes/billing.js).
+async function findUserByStripeCustomerId(customerId) {
+  const result = await query(
+    'SELECT id, email, name, subscription_status FROM users WHERE stripe_customer_id = $1',
+    [customerId]
+  );
+  return result.rows[0];
+}
+
+// Bewusst eigene, schlanke Abfrage statt findUserById zu erweitern: die
+// Billing-Felder sollen nicht versehentlich in publicUser() (server.js)
+// landen, nur weil findUserById mehr Spalten zurückgibt.
+async function findUserBillingStatus(userId) {
+  const result = await query(
+    `SELECT stripe_customer_id, subscription_status, subscription_id,
+            subscription_current_period_end
+     FROM users WHERE id = $1`,
+    [userId]
+  );
+  return result.rows[0];
+}
+
+async function createPurchase({ userId, stripeCheckoutSessionId, productType, topic, amountCents }) {
+  const result = await query(
+    `INSERT INTO purchases (
+       user_id, stripe_checkout_session_id, product_type, topic, amount_cents, status, created_at
+     ) VALUES ($1, $2, $3, $4, $5, 'pending', NOW())
+     RETURNING *`,
+    [userId, stripeCheckoutSessionId, productType, topic || null, amountCents || null]
+  );
+  return result.rows[0];
+}
+
+async function findPurchaseBySessionId(stripeCheckoutSessionId) {
+  const result = await query(
+    'SELECT * FROM purchases WHERE stripe_checkout_session_id = $1',
+    [stripeCheckoutSessionId]
+  );
+  return result.rows[0];
+}
+
+async function completePurchase(purchaseId, stripePaymentIntentId) {
+  const result = await query(
+    `UPDATE purchases
+     SET status = 'completed', stripe_payment_intent_id = $1, completed_at = NOW()
+     WHERE id = $2
+     RETURNING *`,
+    [stripePaymentIntentId || null, purchaseId]
+  );
+  return result.rows[0];
+}
+
+async function findPurchasesByUser(userId) {
+  const result = await query(
+    `SELECT id, product_type, topic, amount_cents, status, created_at, completed_at
+     FROM purchases WHERE user_id = $1 AND status = 'completed'
+     ORDER BY created_at DESC`,
+    [userId]
+  );
+  return result.rows;
+}
+
 module.exports = {
   // Users / Auth
   createUser,
@@ -669,6 +738,14 @@ module.exports = {
   findUserWithPasswordById,
   findUserByConsentToken,
   updateUser,
+
+  // Zahlungen / Stripe
+  findUserByStripeCustomerId,
+  findUserBillingStatus,
+  createPurchase,
+  findPurchaseBySessionId,
+  completePurchase,
+  findPurchasesByUser,
 
   // GDPR
   exportUserData,
