@@ -326,8 +326,16 @@ export default function SettingsPage({ user, onLogout }) {
               <div>
                 <p className="text-gray-900 font-semibold text-sm">Kapiert Pro ist aktiv</p>
                 {billing.subscriptionCurrentPeriodEnd && (
-                  <p className="text-gray-500 text-xs mt-0.5">
-                    Verlängert sich am {new Date(billing.subscriptionCurrentPeriodEnd).toLocaleDateString('de-DE')}
+                  // ✅ Fix (2026-09-06): "Verlängert sich" war irreführend,
+                  // sobald im Stripe-Kundenportal gekündigt wurde - das Abo
+                  // bleibt zwar bis zum Periodenende aktiv (deshalb weiterhin
+                  // subscriptionStatus "active"), verlängert sich danach
+                  // aber gerade NICHT automatisch (siehe billing.js
+                  // subscriptionCancelAtPeriodEnd).
+                  <p className={`text-xs mt-0.5 ${billing.subscriptionCancelAtPeriodEnd ? 'text-accent-dark font-medium' : 'text-gray-500'}`}>
+                    {billing.subscriptionCancelAtPeriodEnd
+                      ? `Gekündigt – läuft am ${new Date(billing.subscriptionCurrentPeriodEnd).toLocaleDateString('de-DE')} aus`
+                      : `Verlängert sich am ${new Date(billing.subscriptionCurrentPeriodEnd).toLocaleDateString('de-DE')}`}
                   </p>
                 )}
               </div>

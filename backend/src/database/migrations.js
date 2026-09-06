@@ -132,6 +132,15 @@ async function runMigrations() {
   await query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_current_period_end TIMESTAMP
   `);
+  // ✅ Fix (2026-09-06): Robert kündigte sein Test-Abo im Stripe-
+  // Kundenportal - Stripe kündigt zum Periodenende (cancel_at_period_end),
+  // der Status bleibt bis dahin "active". Ohne dieses Feld zeigte die App
+  // weiterhin "Verlängert sich am ...", obwohl das Abo tatsächlich ausläuft
+  // und sich NICHT automatisch verlängert - siehe routes/billing.js
+  // applySubscriptionToUser() und frontend SettingsPage.jsx.
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_cancel_at_period_end BOOLEAN NOT NULL DEFAULT false
+  `);
 
   // Eigene Tabelle statt Wiederverwendung von "sources": ein Kauf ist kein
   // Upload, sondern ein Zahlungsvorgang, der potenziell mehrfach pro Nutzer

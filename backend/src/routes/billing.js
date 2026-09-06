@@ -146,12 +146,35 @@ router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async 
 // ✅ GET /api/billing/status - aktueller Abo-Status + abgeschlossene
 // Einzelkäufe des eingeloggten Nutzers.
 router.get('/status', authCheck, asyncHandler(async (req, res) => {
-  const billing = await findUserBillingStatus(req.user.id);
+  let billing = await findUserBillingStatus(req.user.id);
+
+  // ✅ Fix (2026-09-06): nicht blind auf die zuletzt per Webhook gespeicherten
+  // Werte verlassen - Webhooks können (selten) verloren gehen, und das Feld
+  // subscription_cancel_at_period_end existierte bei Roberts Test-Kündigung
+  // noch gar nicht. Ein aktives Abo wird deshalb bei jedem Status-Abruf kurz
+  // live bei Stripe nachgefragt und die DB direkt aufgefrischt - kein
+  // zusätzlicher Zustand, der stillschweigend veralten kann. Nur EIN
+  // zusätzlicher Stripe-Aufruf, ausschließlich beim Öffnen der
+  // Einstellungen, kein spürbarer Mehraufwand.
+  if (isConfigured && billing?.subscription_id) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(billing.subscription_id);
+      await applySubscriptionToUser(req.user.id, subscription);
+      billing = await findUserBillingStatus(req.user.id);
+    } catch (err) {
+      console.error('Konnte Abo-Status nicht live bei Stripe abgleichen, nutze zwischengespeicherten Stand:', err.message);
+    }
+  }
+
   const purchases = await findPurchasesByUser(req.user.id);
 
   res.json({
     subscriptionStatus: billing?.subscription_status || 'free',
     subscriptionCurrentPeriodEnd: billing?.subscription_current_period_end || null,
+    // "active" bedeutet allein noch nicht "verlängert sich automatisch",
+    // solange eine Kündigung zum Periodenende vorliegt - siehe
+    // applySubscriptionToUser() unten und SettingsPage.jsx.
+    subscriptionCancelAtPeriodEnd: billing?.subscription_cancel_at_period_end || false,
     purchases
   });
 }));
@@ -266,7 +289,13 @@ async function applySubscriptionToUser(userId, subscription, statusOverride) {
     subscription_id: subscription.id,
     subscription_current_period_end: periodEndUnix
       ? new Date(periodEndUnix * 1000).toISOString()
-      : null
+      : null,
+    // ✅ Fix (2026-09-06): eine Kündigung im Stripe-Kundenportal setzt
+    // "cancel_at_period_end" auf true, der subscription.status bleibt aber
+    // bis zum Periodenende "active" - ohne dieses eigene Feld zeigte die
+    // App fälschlich "Verlängert sich am ..." für ein bereits gekündigtes
+    // Abo an (siehe GET /status oben, SettingsPage.jsx).
+    subscription_cancel_at_period_end: Boolean(subscription.cancel_at_period_end)
   });
 }
 

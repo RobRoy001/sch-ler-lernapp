@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, XCircle, AlertTriangle, RotateCcw } from 'lucide-react';
 import Logo from '../components/Logo';
 import DeepeningPanel from '../components/DeepeningPanel';
+import AnswerReview from '../components/AnswerReview';
 import { API_BASE_URL } from '../config/api';
 
 // Hinweis: im aktuellen Backend (processing.js, Mock-Testgenerierung)
@@ -131,7 +132,11 @@ export default function TestPlayer({ user }) {
         accuracy: data.submission.accuracy,
         // ✅ Vertiefungsmodus (2026-09-06): kommt direkt in der Submit-
         // Antwort mit (siehe backend routes/processing.js, computeWeakTopics)
-        weakTopics: data.weakTopics || []
+        weakTopics: data.weakTopics || [],
+        // ✅ Fix (2026-09-06): pro-Frage-Auswertung für die Ergebnis-Ansicht
+        // (siehe AnswerReview) - kommt jetzt ebenfalls direkt mit der
+        // Submit-Antwort mit, kein zweiter Request nötig.
+        answers: data.answers || []
       });
       setSubmitted(true);
     } catch (err) {
@@ -385,6 +390,7 @@ export default function TestPlayer({ user }) {
         </div>
 
         <div className="text-left">
+          <AnswerReview questions={results.answers} />
           <DeepeningPanel submissionId={results.submissionId} weakTopics={results.weakTopics} />
         </div>
       </div>

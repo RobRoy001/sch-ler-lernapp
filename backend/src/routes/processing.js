@@ -327,6 +327,13 @@ router.post('/tests/:testId/submit', authCheck, asyncHandler(async (req, res) =>
         accuracy: submission.accuracy,
         submittedAt: submission.submitted_at
       },
+      // ✅ Fix (2026-09-06): Robert konnte sich nach einem Test nicht
+      // anschauen, was er falsch gemacht hat - gradedAnswers trägt jetzt
+      // schon alles Nötige dafür (siehe Kommentar oben), muss also nur noch
+      // mitgeschickt werden. Gleicher Feldname/gleiche Form wie
+      // submission.questions bei GET /submissions/:id (siehe unten), damit
+      // beide Stellen dieselbe Anzeige-Komponente nutzen können.
+      answers: gradedAnswers,
       weakTopics
     });
   } catch (error) {

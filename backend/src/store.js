@@ -683,7 +683,7 @@ async function findUserByStripeCustomerId(customerId) {
 async function findUserBillingStatus(userId) {
   const result = await query(
     `SELECT stripe_customer_id, subscription_status, subscription_id,
-            subscription_current_period_end
+            subscription_current_period_end, subscription_cancel_at_period_end
      FROM users WHERE id = $1`,
     [userId]
   );

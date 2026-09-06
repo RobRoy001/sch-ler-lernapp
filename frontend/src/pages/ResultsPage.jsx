@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, XCircle, AlertTriangle, X } from 'lucide-react';
 import Logo from '../components/Logo';
 import DeepeningPanel from '../components/DeepeningPanel';
+import AnswerReview from '../components/AnswerReview';
 import { API_BASE_URL } from '../config/api';
 
 // Zeigt die Details einer bereits eingereichten Test-Submission
@@ -145,6 +146,8 @@ export default function ResultsPage() {
             </div>
           </div>
         )}
+
+        {submission && <AnswerReview questions={submission.questions} />}
 
         {submission && (
           <DeepeningPanel
