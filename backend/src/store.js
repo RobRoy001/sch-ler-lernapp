@@ -6,7 +6,7 @@
 //          date_of_birth, parent_email, age_verified, parent_consent_token,
 //          parent_consent_expires, parent_consent_at, account_status, created_at
 //   sources: id, user_id, content_type, reference_id, reference_book_id,
-//            status, progress, test (jsonb), created_at
+//            status, progress, test (jsonb), title, created_at
 //   test_submissions: id, user_id, test_id, correct_count, total_questions,
 //                      accuracy, answers_json, time_taken, submitted_at
 //   parents: id, email, password_hash, name, created_at (Eltern-Board,
@@ -21,7 +21,7 @@
 //                  test (jsonb), created_at
 //   class_source_submissions: id, class_source_id, student_user_id,
 //                              correct_count, total_questions, accuracy,
-//                              submitted_at
+//                              answers_json, submitted_at
 
 const { query } = require('./database/connection');
 
@@ -629,19 +629,24 @@ async function findClassSourceById(sourceId) {
   return result.rows[0];
 }
 
+// ✅ Fix (2026-09-06): "answersJson" ergänzt (siehe migrations.js) - trägt
+// dieselben Detaildaten wie test_submissions.answers_json, damit der
+// Klassencode-Pfad dieselbe Fragen-Detailansicht (AnswerReview) und denselben
+// Vertiefungsmodus nutzen kann wie der individuelle Schüler-Upload.
 async function createClassSourceSubmission({
   classSourceId,
   studentUserId,
   correctCount,
   totalQuestions,
-  accuracy
+  accuracy,
+  answersJson
 }) {
   const result = await query(
     `INSERT INTO class_source_submissions (
-       class_source_id, student_user_id, correct_count, total_questions, accuracy, submitted_at
-     ) VALUES ($1, $2, $3, $4, $5, NOW())
+       class_source_id, student_user_id, correct_count, total_questions, accuracy, answers_json, submitted_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
      RETURNING *`,
-    [classSourceId, studentUserId, correctCount, totalQuestions, accuracy]
+    [classSourceId, studentUserId, correctCount, totalQuestions, accuracy, JSON.stringify(answersJson || [])]
   );
   return result.rows[0];
 }
@@ -670,6 +675,18 @@ async function findClassSourceSubmissionByStudent(classSourceId, studentUserId) 
      WHERE class_source_id = $1 AND student_user_id = $2
      ORDER BY submitted_at DESC LIMIT 1`,
     [classSourceId, studentUserId]
+  );
+  return result.rows[0];
+}
+
+// ✅ Fix (2026-09-06): Gegenstück zu findSubmissionById (test_submissions)
+// für den Klassencode-Pfad - wird vom Vertiefungsmodus gebraucht
+// (routes/deepening.js POST /generate), der die Einreichung nur über ihre
+// eigene ID kennt, nicht über die zugehörige class_source_id.
+async function findClassSourceSubmissionById(id, studentUserId) {
+  const result = await query(
+    'SELECT * FROM class_source_submissions WHERE id = $1 AND student_user_id = $2',
+    [id, studentUserId]
   );
   return result.rows[0];
 }
@@ -707,13 +724,34 @@ async function findUserBillingStatus(userId) {
   return result.rows[0];
 }
 
-async function createPurchase({ userId, stripeCheckoutSessionId, productType, topic, submissionId, amountCents }) {
+// ✅ Fix (2026-09-06): "classSourceSubmissionId" ergänzt - paralleler Bezug
+// für Käufe im Klassencode-Pfad, siehe migrations.js-Kommentar zu
+// purchases.class_source_submission_id (eigener Bezug statt submissionId
+// mitzubenutzen, weil test_submissions und class_source_submissions
+// getrennte ID-Räume sind).
+async function createPurchase({
+  userId,
+  stripeCheckoutSessionId,
+  productType,
+  topic,
+  submissionId,
+  classSourceSubmissionId,
+  amountCents
+}) {
   const result = await query(
     `INSERT INTO purchases (
-       user_id, stripe_checkout_session_id, product_type, topic, submission_id, amount_cents, status, created_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
+       user_id, stripe_checkout_session_id, product_type, topic, submission_id, class_source_submission_id, amount_cents, status, created_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW())
      RETURNING *`,
-    [userId, stripeCheckoutSessionId, productType, topic || null, submissionId || null, amountCents || null]
+    [
+      userId,
+      stripeCheckoutSessionId,
+      productType,
+      topic || null,
+      submissionId || null,
+      classSourceSubmissionId || null,
+      amountCents || null
+    ]
   );
   return result.rows[0];
 }
@@ -739,7 +777,7 @@ async function completePurchase(purchaseId, stripePaymentIntentId) {
 
 async function findPurchasesByUser(userId) {
   const result = await query(
-    `SELECT id, product_type, topic, submission_id, amount_cents, status, created_at, completed_at
+    `SELECT id, product_type, topic, submission_id, class_source_submission_id, amount_cents, status, created_at, completed_at
      FROM purchases WHERE user_id = $1 AND status = 'completed'
      ORDER BY created_at DESC`,
     [userId]
@@ -752,12 +790,15 @@ async function findPurchasesByUser(userId) {
 // Klassenmodell-2026-09-02.md Abschnitt 4, und routes/deepening.js)
 // ============================================================================
 
-async function createDeepening({ userId, submissionId, topic, explanation, practiceQuestions }) {
+// ✅ Fix (2026-09-06): "classSourceSubmissionId" ergänzt - Vertiefungsmodus
+// jetzt auch für Klassenarbeiten (Klassencode-Pfad) nutzbar, gleicher
+// getrennter Bezug wie bei createPurchase oben.
+async function createDeepening({ userId, submissionId, classSourceSubmissionId, topic, explanation, practiceQuestions }) {
   const result = await query(
-    `INSERT INTO deepenings (user_id, submission_id, topic, explanation, practice_questions, created_at)
-     VALUES ($1, $2, $3, $4, $5, NOW())
+    `INSERT INTO deepenings (user_id, submission_id, class_source_submission_id, topic, explanation, practice_questions, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())
      RETURNING *`,
-    [userId, submissionId || null, topic, explanation, JSON.stringify(practiceQuestions)]
+    [userId, submissionId || null, classSourceSubmissionId || null, topic, explanation, JSON.stringify(practiceQuestions)]
   );
   return result.rows[0];
 }
@@ -867,5 +908,6 @@ module.exports = {
   findClassSourceById,
   createClassSourceSubmission,
   findSubmissionsByClassSource,
-  findClassSourceSubmissionByStudent
+  findClassSourceSubmissionByStudent,
+  findClassSourceSubmissionById
 };

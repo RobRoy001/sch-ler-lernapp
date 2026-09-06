@@ -16,6 +16,14 @@ import { API_BASE_URL } from '../config/api';
 // Tests identisch zurück - ein Klick auf "freischalten" bei irgendeinem
 // Thema schaltet automatisch alle Schwachthemen dieses Tests frei (siehe
 // computeWeakTopics/loadDeepeningAccess in routes/processing.js).
+//
+// ✅ Fix (2026-09-06): funktioniert jetzt auch für Klassenarbeiten
+// (Klassencode-Pfad, KlassePage.jsx) - dafür optional "classContext"
+// ({ classId, classSourceId, classSourceSubmissionId }) statt/zusätzlich zu
+// submissionId übergeben. Klassenarbeiten laufen über einen eigenen
+// ID-Raum (class_source_submissions statt test_submissions, siehe
+// routes/deepening.js), deshalb die eigene, klar benannte Prop statt
+// submissionId für beide Fälle zu überladen.
 
 function PracticeQuiz({ deepeningId, questions }) {
   const [answers, setAnswers] = useState({});
@@ -94,11 +102,25 @@ function PracticeQuiz({ deepeningId, questions }) {
   );
 }
 
-function TopicCard({ submissionId, weakTopic, autoGenerate, onAutoGenerateHandled }) {
+function TopicCard({ submissionId, classContext, weakTopic, autoGenerate, onAutoGenerateHandled }) {
   const [deepening, setDeepening] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+  const isClassMode = !!classContext?.classSourceSubmissionId;
+  const generateBody = isClassMode
+    ? { classSourceSubmissionId: classContext.classSourceSubmissionId, topic: weakTopic.topic }
+    : { submissionId, topic: weakTopic.topic };
+  const checkoutBody = isClassMode
+    ? {
+        type: 'vertiefung',
+        topic: weakTopic.topic,
+        classSourceSubmissionId: classContext.classSourceSubmissionId,
+        classId: classContext.classId,
+        classSourceId: classContext.classSourceId
+      }
+    : { type: 'vertiefung', topic: weakTopic.topic, submissionId };
 
   // ✅ Fix (2026-09-06): der Stripe-Webhook kann dem Checkout-Redirect noch
   // hinterherhinken (beobachtet bis zu ~28s) - vorher zeigte ein 402 hier
@@ -113,7 +135,7 @@ function TopicCard({ submissionId, weakTopic, autoGenerate, onAutoGenerateHandle
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ submissionId, topic: weakTopic.topic })
+        body: JSON.stringify(generateBody)
       });
       const data = await response.json();
       if (!response.ok) {
@@ -135,7 +157,8 @@ function TopicCard({ submissionId, weakTopic, autoGenerate, onAutoGenerateHandle
     } finally {
       setLoading(false);
     }
-  }, [submissionId, weakTopic.topic]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submissionId, classContext?.classSourceSubmissionId, weakTopic.topic]);
 
   useEffect(() => {
     if (autoGenerate) {
@@ -153,7 +176,7 @@ function TopicCard({ submissionId, weakTopic, autoGenerate, onAutoGenerateHandle
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'vertiefung', topic: weakTopic.topic, submissionId })
+        body: JSON.stringify(checkoutBody)
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Checkout konnte nicht gestartet werden');
@@ -216,7 +239,7 @@ function TopicCard({ submissionId, weakTopic, autoGenerate, onAutoGenerateHandle
   );
 }
 
-export default function DeepeningPanel({ submissionId, weakTopics, autoGenerateTopic, onAutoGenerateHandled }) {
+export default function DeepeningPanel({ submissionId, classContext, weakTopics, autoGenerateTopic, onAutoGenerateHandled }) {
   if (!weakTopics || weakTopics.length === 0) return null;
 
   return (
@@ -229,6 +252,7 @@ export default function DeepeningPanel({ submissionId, weakTopics, autoGenerateT
           <TopicCard
             key={wt.topic}
             submissionId={submissionId}
+            classContext={classContext}
             weakTopic={wt}
             autoGenerate={autoGenerateTopic === wt.topic}
             onAutoGenerateHandled={onAutoGenerateHandled}

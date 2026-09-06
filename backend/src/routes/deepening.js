@@ -21,6 +21,14 @@
 //   (behebt nebenbei auch die alte Schwäche, dass ein leicht anders
 //   formulierter Themen-Text bei einem späteren Test nicht wiedererkannt
 //   wurde - der Test-Bezug ist eindeutig, kein String-Vergleich mehr nötig).
+//
+// ✅ Fix (2026-09-06): derselbe Vertiefungsmodus gilt jetzt auch für
+// Klassenarbeiten, die ein Kind über einen Klassencode einer Lehrkraft
+// macht (routes/classes.js) - vorher gab es dafür weder eine Fragen-
+// Detailansicht noch eine Vertiefung. Läuft über einen eigenen, parallelen
+// Bezug (purchases/deepenings.class_source_submission_id statt
+// submission_id), weil test_submissions und class_source_submissions
+// getrennte ID-Räume sind (siehe POST /generate unten, "classSourceSubmissionId").
 
 const express = require('express');
 const router = express.Router();
@@ -29,6 +37,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { generateDeepening } = require('../services/questionGenerator');
 const {
   findSubmissionById,
+  findClassSourceSubmissionById,
   findUserBillingStatus,
   findPurchasesByUser,
   createDeepening,
@@ -51,15 +60,26 @@ function mapDeepening(row) {
 
 // ✅ POST /api/deepening/generate - Vertiefung zu einem Schwachthema
 // erzeugen (oder eine bereits vorhandene zurückgeben, siehe Kommentar oben).
+//
+// ✅ Fix (2026-09-06): akzeptiert jetzt zusätzlich classSourceSubmissionId
+// als Alternative zu submissionId - Klassenarbeiten (Klassencode-Pfad,
+// routes/classes.js) laufen über eine eigene Tabelle/eigenen ID-Raum
+// (class_source_submissions statt test_submissions), brauchen deshalb einen
+// eigenen Bezug (purchases/deepenings.class_source_submission_id, siehe
+// migrations.js) statt submissionId mitzubenutzen - sonst könnte eine
+// zufällig gleiche Zahl in beiden Tabellen die falsche Einreichung meinen.
 router.post('/generate', authCheck, asyncHandler(async (req, res) => {
-  const { submissionId, topic } = req.body;
+  const { submissionId, classSourceSubmissionId, topic } = req.body;
   const userId = req.user.id;
+  const isClassMode = !!classSourceSubmissionId;
 
-  if (!submissionId || !topic) {
-    return res.status(400).json({ error: 'submissionId und topic sind erforderlich' });
+  if (!topic || (!submissionId && !classSourceSubmissionId)) {
+    return res.status(400).json({ error: 'topic und (submissionId oder classSourceSubmissionId) sind erforderlich' });
   }
 
-  const submission = await findSubmissionById(parseInt(submissionId, 10), userId);
+  const submission = isClassMode
+    ? await findClassSourceSubmissionById(parseInt(classSourceSubmissionId, 10), userId)
+    : await findSubmissionById(parseInt(submissionId, 10), userId);
   if (!submission) {
     return res.status(404).json({ error: 'Einreichung nicht gefunden' });
   }
@@ -75,10 +95,13 @@ router.post('/generate', authCheck, asyncHandler(async (req, res) => {
     findPurchasesByUser(userId)
   ]);
   const isPro = billing?.subscription_status === 'active';
-  const submissionIdInt = parseInt(submissionId, 10);
-  const hasPurchased = purchases.some(
-    (p) => p.product_type === 'vertiefung' && p.submission_id === submissionIdInt
-  );
+  const hasPurchased = isClassMode
+    ? purchases.some(
+        (p) => p.product_type === 'vertiefung' && p.class_source_submission_id === parseInt(classSourceSubmissionId, 10)
+      )
+    : purchases.some(
+        (p) => p.product_type === 'vertiefung' && p.submission_id === parseInt(submissionId, 10)
+      );
 
   if (!isPro && !hasPurchased) {
     return res.status(402).json({
@@ -106,7 +129,8 @@ router.post('/generate', authCheck, asyncHandler(async (req, res) => {
 
   const row = await createDeepening({
     userId,
-    submissionId: parseInt(submissionId, 10),
+    submissionId: isClassMode ? null : parseInt(submissionId, 10),
+    classSourceSubmissionId: isClassMode ? parseInt(classSourceSubmissionId, 10) : null,
     topic,
     explanation: generated.explanation,
     practiceQuestions: generated.practiceQuestions

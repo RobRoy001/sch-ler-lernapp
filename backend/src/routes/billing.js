@@ -80,7 +80,13 @@ async function getOrCreateStripeCustomerId(userId, email) {
 // Vertiefungsmodus-Einzelkauf erstellen, gibt die Stripe-Checkout-URL
 // zurück, zu der das Frontend weiterleitet.
 router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async (req, res) => {
-  const { type, topic, submissionId } = req.body;
+  const { type, topic, submissionId, classSourceSubmissionId, classId, classSourceId } = req.body;
+  // ✅ Fix (2026-09-06): Vertiefungsmodus-Einzelkauf jetzt auch für
+  // Klassenarbeiten (Klassencode-Pfad, routes/classes.js) möglich - dafür
+  // wird classSourceSubmissionId statt submissionId geschickt, plus classId
+  // (nur für die Rücksprung-URL nach Stripe nötig, siehe unten). Beide
+  // Varianten sind exklusiv: entweder normaler Test-Upload ODER Klassenarbeit.
+  const isClassMode = !!classSourceSubmissionId;
 
   if (type !== 'pro' && type !== 'vertiefung') {
     return res.status(400).json({ error: 'type muss "pro" oder "vertiefung" sein' });
@@ -90,8 +96,11 @@ router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async 
   // in routes/processing.js. "topic" wird optional weiterhin mitgeschickt
   // (nur noch für die Stripe-Checkout-Beschreibung und den automatischen
   // Rücksprung/Vertiefungs-Start auf der Ergebnisseite, siehe unten).
-  if (type === 'vertiefung' && !submissionId) {
-    return res.status(400).json({ error: 'submissionId ist für den Vertiefungsmodus-Einzelkauf erforderlich' });
+  if (type === 'vertiefung' && !submissionId && !isClassMode) {
+    return res.status(400).json({ error: 'submissionId oder classSourceSubmissionId ist für den Vertiefungsmodus-Einzelkauf erforderlich' });
+  }
+  if (type === 'vertiefung' && isClassMode && !classId) {
+    return res.status(400).json({ error: 'classId ist für den Vertiefungsmodus-Einzelkauf einer Klassenarbeit erforderlich' });
   }
 
   const priceId = type === 'pro' ? STRIPE_PRICE_PRO : STRIPE_PRICE_VERTIEFUNG;
@@ -109,14 +118,20 @@ router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async 
   // success_url für type "vertiefung", inkl. Thema als Query-Parameter,
   // damit die Ergebnisseite die Vertiefung direkt automatisch anstößt
   // (siehe frontend DeepeningPanel.jsx).
-  const successUrl =
-    type === 'vertiefung' && submissionId
-      ? `${FRONTEND_URL}/results/${submissionId}?billing=success&topic=${encodeURIComponent(topic)}`
-      : `${FRONTEND_URL}/settings?billing=success`;
-  const cancelUrl =
-    type === 'vertiefung' && submissionId
-      ? `${FRONTEND_URL}/results/${submissionId}?billing=cancel`
-      : `${FRONTEND_URL}/settings?billing=cancel`;
+  // ✅ Fix (2026-09-06): bei einer Klassenarbeit gibt es keine eigene
+  // /results/:id-Route - der Rücksprung geht stattdessen auf die Klassen-
+  // Ansicht (/klasse/:classId), mit sourceId der Klassenarbeit als
+  // zusätzlichem Query-Parameter, damit KlassePage.jsx weiß, welches
+  // Ergebnis sie nach der Rückkehr direkt anzeigen soll.
+  let successUrl = `${FRONTEND_URL}/settings?billing=success`;
+  let cancelUrl = `${FRONTEND_URL}/settings?billing=cancel`;
+  if (type === 'vertiefung' && isClassMode) {
+    successUrl = `${FRONTEND_URL}/klasse/${classId}?billing=success&topic=${encodeURIComponent(topic)}&sourceId=${classSourceId || ''}`;
+    cancelUrl = `${FRONTEND_URL}/klasse/${classId}?billing=cancel&sourceId=${classSourceId || ''}`;
+  } else if (type === 'vertiefung' && submissionId) {
+    successUrl = `${FRONTEND_URL}/results/${submissionId}?billing=success&topic=${encodeURIComponent(topic)}`;
+    cancelUrl = `${FRONTEND_URL}/results/${submissionId}?billing=cancel`;
+  }
 
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
@@ -144,7 +159,8 @@ router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async 
       stripeCheckoutSessionId: session.id,
       productType: 'vertiefung',
       topic: topic || null,
-      submissionId: submissionId ? parseInt(submissionId, 10) : null,
+      submissionId: !isClassMode && submissionId ? parseInt(submissionId, 10) : null,
+      classSourceSubmissionId: isClassMode ? parseInt(classSourceSubmissionId, 10) : null,
       amountCents: session.amount_total ?? null
     });
   }

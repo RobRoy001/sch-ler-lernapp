@@ -111,6 +111,16 @@ async function runMigrations() {
       submitted_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  // ✅ Fix (2026-09-06): Klassenarbeiten über den Klassencode-Pfad
+  // (routes/classes.js) hatten bisher weder eine Fragen-Detailansicht noch
+  // den Vertiefungsmodus - beides wurde nur für den individuellen
+  // Schüler-Upload gebaut (routes/processing.js). "answers_json" trägt hier
+  // dieselbe Form wie test_submissions.answers_json (siehe dortiger
+  // Kommentar): je Frage question_id/answer/is_correct/topic/question_text/
+  // correct_answer/explanation.
+  await query(`
+    ALTER TABLE class_source_submissions ADD COLUMN IF NOT EXISTS answers_json JSONB
+  `);
 
   // ---- Zahlungen/Stripe (2026-09-04, siehe LernApp-Vollaudit-2026-09-03.md,
   // Plan für nächste Woche) ----
@@ -175,6 +185,14 @@ async function runMigrations() {
   await query(`
     ALTER TABLE purchases ADD COLUMN IF NOT EXISTS submission_id INTEGER REFERENCES test_submissions(id) ON DELETE SET NULL
   `);
+  // ✅ Fix (2026-09-06): eigene, parallele Bezugsspalte für Käufe im
+  // Klassen-Pfad (Klassenarbeit über Klassencode statt eigenem Upload) -
+  // bewusst NICHT dieselbe Spalte wie submission_id, weil test_submissions
+  // und class_source_submissions getrennte ID-Räume sind (dieselbe Zahl
+  // könnte in beiden Tabellen vorkommen, aber eine andere Zeile meinen).
+  await query(`
+    ALTER TABLE purchases ADD COLUMN IF NOT EXISTS class_source_submission_id INTEGER REFERENCES class_source_submissions(id) ON DELETE SET NULL
+  `);
 
   // ---- Vertiefungsmodus (2026-09-06, siehe LernApp-Preismodell-Nachhilfe-
   // Klassenmodell-2026-09-02.md Abschnitt 4) ----
@@ -203,6 +221,13 @@ async function runMigrations() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  // ✅ Fix (2026-09-06): Vertiefungsmodus jetzt auch für Klassenarbeiten
+  // (Klassencode-Pfad) nutzbar - gleiche Begründung wie bei
+  // purchases.class_source_submission_id oben, eigener Bezug statt
+  // submission_id mitzubenutzen (getrennte ID-Räume).
+  await query(`
+    ALTER TABLE deepenings ADD COLUMN IF NOT EXISTS class_source_submission_id INTEGER REFERENCES class_source_submissions(id) ON DELETE SET NULL
+  `);
 
   // ✅ Fix (2026-09-06): Robert gibt beim Hochladen einen eigenen Titel ein
   // ("z.B. Mathe Klausur - Kapitel 5"), der aber nirgends gespeichert wurde -
@@ -218,6 +243,7 @@ async function runMigrations() {
   console.log('✅ Zahlungs-Spalten/Tabellen geprüft/angelegt (users.stripe_*, purchases).');
   console.log('✅ Vertiefungsmodus-Tabelle geprüft/angelegt (deepenings).');
   console.log('✅ sources.title Spalte geprüft/angelegt.');
+  console.log('✅ Vertiefungsmodus/AnswerReview für Klassenarbeiten geprüft/angelegt (class_source_submissions.answers_json, purchases/deepenings.class_source_submission_id).');
 }
 
 module.exports = { runMigrations };

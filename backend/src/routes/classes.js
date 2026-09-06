@@ -16,10 +16,57 @@ const {
   findClassSourcesByClass,
   findClassSourceById,
   findClassSourceSubmissionByStudent,
-  createClassSourceSubmission
+  createClassSourceSubmission,
+  findUserBillingStatus,
+  findPurchasesByUser
 } = require('../store');
 
 const router = express.Router();
+
+// ✅ Fix (2026-09-06): Klassenarbeiten hatten bisher weder eine Fragen-
+// Detailansicht noch den Vertiefungsmodus (Robert: "kann nicht anklicken um
+// zu sehen wo die Fehler waren" galt hier weiterhin, obwohl der individuelle
+// Upload-Pfad das schon konnte). Diese beiden Hilfsfunktionen sind bewusst
+// eine eigene Kopie von computeWeakTopics()/loadDeepeningAccess() aus
+// routes/processing.js statt eines gemeinsamen Imports - gleiche
+// Begründung wie bei generateMockClassTest() in routes/teacher.js: der
+// Klassen-Pfad soll unabhängig vom individuellen Upload-Pfad bleiben, damit
+// eine Änderung an der einen Stelle die andere nicht versehentlich mit
+// beeinflusst.
+function computeWeakTopics(gradedAnswers, { isPro, isUnlockedForSubmission }) {
+  const byTopic = new Map();
+
+  for (const a of gradedAnswers) {
+    if (!a.topic) continue;
+    if (!byTopic.has(a.topic)) {
+      byTopic.set(a.topic, { topic: a.topic, wrongCount: 0, totalCount: 0 });
+    }
+    const entry = byTopic.get(a.topic);
+    entry.totalCount++;
+    if (!a.is_correct) entry.wrongCount++;
+  }
+
+  return Array.from(byTopic.values())
+    .filter((t) => t.wrongCount > 0)
+    .map((t) => ({ ...t, unlocked: isPro || isUnlockedForSubmission }))
+    .sort((a, b) => b.wrongCount - a.wrongCount);
+}
+
+// Lädt Pro-Status + prüft, ob GENAU DIESE Klassenarbeit (classSourceSubmissionId)
+// bereits per Einzelkauf freigeschaltet wurde - eigener Bezug
+// (purchases.class_source_submission_id), weil test_submissions und
+// class_source_submissions getrennte ID-Räume sind (siehe migrations.js).
+async function loadDeepeningAccessForClass(userId, classSourceSubmissionId) {
+  const [billing, purchases] = await Promise.all([
+    findUserBillingStatus(userId),
+    findPurchasesByUser(userId)
+  ]);
+  const isPro = billing?.subscription_status === 'active';
+  const isUnlockedForSubmission = purchases.some(
+    (p) => p.product_type === 'vertiefung' && p.class_source_submission_id === classSourceSubmissionId
+  );
+  return { isPro, isUnlockedForSubmission };
+}
 
 async function requireMembership(req, res) {
   const classId = parseInt(req.params.classId, 10);
@@ -115,14 +162,25 @@ router.post('/:classId/sources/:sourceId/submit', authCheck, async (req, res) =>
     const answerByQuestionId = new Map(answers.map((a) => [String(a.question_id), a.answer]));
 
     let correctCount = 0;
-    questions.forEach((q) => {
+    // ✅ Fix (2026-09-06): gradedAnswers trägt jetzt dieselben Detaildaten wie
+    // beim individuellen Upload (routes/processing.js /tests/:testId/submit)
+    // mit - Grundlage sowohl für die Fragen-Detailansicht (AnswerReview) als
+    // auch für die Schwachthemen-Erkennung (computeWeakTopics oben).
+    const gradedAnswers = questions.map((q) => {
       const userAnswer = answerByQuestionId.get(String(q.id)) || '';
-      if (
-        userAnswer &&
-        userAnswer.toLowerCase().trim() === String(q.correct_answer).toLowerCase().trim()
-      ) {
-        correctCount++;
-      }
+      const isCorrect =
+        !!userAnswer &&
+        userAnswer.toLowerCase().trim() === String(q.correct_answer).toLowerCase().trim();
+      if (isCorrect) correctCount++;
+      return {
+        question_id: q.id,
+        answer: userAnswer,
+        is_correct: isCorrect,
+        topic: q.type === 'vocabulary' ? null : q.topic || null,
+        question_text: q.question_text,
+        correct_answer: q.correct_answer,
+        explanation: q.explanation || ''
+      };
     });
 
     const totalQuestions = questions.length;
@@ -133,21 +191,72 @@ router.post('/:classId/sources/:sourceId/submit', authCheck, async (req, res) =>
       studentUserId: req.user.id,
       correctCount,
       totalQuestions,
-      accuracy
+      accuracy,
+      answersJson: gradedAnswers
     });
+
+    const access = await loadDeepeningAccessForClass(req.user.id, submission.id);
+    const weakTopics = computeWeakTopics(gradedAnswers, access);
 
     return res.json({
       success: true,
       submission: {
+        id: submission.id,
         correctCount: submission.correct_count,
         totalQuestions: submission.total_questions,
         accuracy: submission.accuracy,
-        submittedAt: submission.submitted_at
+        submittedAt: submission.submitted_at,
+        answers: gradedAnswers,
+        weakTopics
       }
     });
   } catch (error) {
     console.error('Class Source Submit Error:', error);
     return res.status(500).json({ error: 'Test konnte nicht eingereicht werden' });
+  }
+});
+
+// ✅ Fix (2026-09-06): GET-Pendant zu POST .../submit, für "Nochmal ansehen"
+// in KlassePage.jsx (vorher öffnete das den leeren Test erneut statt das
+// bereits abgegebene Ergebnis zu zeigen) UND für die Rückkehr von Stripe
+// nach einem Vertiefungsmodus-Einzelkauf (gleiches Muster wie
+// GET /api/processing/submissions/:submissionId).
+router.get('/:classId/sources/:sourceId/result', authCheck, async (req, res) => {
+  try {
+    const classId = await requireMembership(req, res);
+    if (!classId) return;
+
+    const sourceId = parseInt(req.params.sourceId, 10);
+    const source = await findClassSourceById(sourceId);
+    if (!source || source.class_id !== classId) {
+      return res.status(404).json({ error: 'Klassenarbeit nicht gefunden' });
+    }
+
+    const submission = await findClassSourceSubmissionByStudent(sourceId, req.user.id);
+    if (!submission) {
+      return res.status(404).json({ error: 'Du hast diese Klassenarbeit noch nicht abgegeben' });
+    }
+
+    const gradedAnswers = submission.answers_json || [];
+    const access = await loadDeepeningAccessForClass(req.user.id, submission.id);
+    const weakTopics = computeWeakTopics(gradedAnswers, access);
+
+    return res.json({
+      success: true,
+      submission: {
+        id: submission.id,
+        title: source.title,
+        correctCount: submission.correct_count,
+        totalQuestions: submission.total_questions,
+        accuracy: submission.accuracy,
+        submittedAt: submission.submitted_at,
+        answers: gradedAnswers,
+        weakTopics
+      }
+    });
+  } catch (error) {
+    console.error('Class Source Result Error:', error);
+    return res.status(500).json({ error: 'Ergebnis konnte nicht geladen werden' });
   }
 });
 
