@@ -32,7 +32,8 @@ const {
   revokeParentChildLink,
   findClassByCode,
   createClassMembership,
-  findClassesByStudent
+  findClassesByStudent,
+  activateUserForClass
 } = require('./store');
 const processingRouter = require('./routes/processing');
 const contentRouter = require('./routes/content');
@@ -375,6 +376,12 @@ app.post('/api/auth/join-class', authCheck, async (req, res) => {
     }
 
     await createClassMembership(cls.id, req.user.id);
+    // ✅ Klassen-Abo (2026-09-07): falls diese Klasse die Kappungsgrenze
+    // bereits erreicht hat (routes/billing.js handleStripeWebhook), soll ein
+    // neu beitretendes Mitglied sofort mitprofitieren statt erst auf den
+    // nächsten Zahlungs-Webhook warten zu müssen. No-Op für alle anderen
+    // Klassen (subscription_status dort weiterhin 'free').
+    await activateUserForClass(req.user.id, cls.id);
 
     return res.json({
       success: true,

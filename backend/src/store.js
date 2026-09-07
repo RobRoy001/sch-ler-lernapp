@@ -18,7 +18,7 @@
 //   classes: id, teacher_id, name, class_code, subscription_status, created_at
 //   class_memberships: id, class_id, student_user_id, joined_at
 //   class_sources: id, class_id, teacher_id, title, status, progress,
-//                  test (jsonb), created_at
+//                  visibility (draft/published), test (jsonb), created_at
 //   class_source_submissions: id, class_source_id, student_user_id,
 //                              correct_count, total_questions, accuracy,
 //                              answers_json, submitted_at
@@ -581,10 +581,15 @@ async function findClassesByStudent(studentUserId) {
 // Polling: die Zeile startet als 'pending' OHNE test, routes/teacher.js
 // füllt test/status per updateClassSource() nach, sobald die echte
 // Pipeline (oder im Fehlerfall der Mock-Fallback) fertig ist.
+// ✅ Draft/Publish (2026-09-07): jede neue Klassenarbeit startet als
+// 'draft', unabhängig vom fertigen Verarbeitungsstatus - erst ein
+// expliziter Publish-Aufruf der Lehrkraft (routes/teacher.js) macht sie für
+// die Klasse sichtbar (routes/classes.js prüft "visibility", siehe
+// migrations.js-Kommentar zur Spalte).
 async function createClassSource({ classId, teacherId, title }) {
   const result = await query(
-    `INSERT INTO class_sources (class_id, teacher_id, title, status, progress, created_at)
-     VALUES ($1, $2, $3, 'pending', 0, NOW())
+    `INSERT INTO class_sources (class_id, teacher_id, title, status, progress, visibility, created_at)
+     VALUES ($1, $2, $3, 'pending', 0, 'draft', NOW())
      RETURNING *`,
     [classId, teacherId, title]
   );
@@ -654,9 +659,14 @@ async function createClassSourceSubmission({
 // Für die Lehrer-Fortschrittsansicht: wer aus der Klasse hat diesen Test
 // gemacht und wie? Namen kommen per JOIN mit, damit die Lehrkraft nicht
 // selbst Nutzer-IDs auflösen muss.
+// ✅ Themen-Aggregation für die Klasse (2026-09-07): "answers_json" jetzt
+// mit dabei - routes/teacher.js gruppiert daraus die klassenweiten
+// Schwachthemen (computeClassWeakTopics), analog zu computeWeakTopics für
+// eine einzelne Einreichung.
 async function findSubmissionsByClassSource(classSourceId) {
   const result = await query(
     `SELECT css.id, css.correct_count, css.total_questions, css.accuracy, css.submitted_at,
+            css.answers_json,
             u.id AS student_id, u.name AS student_name
      FROM class_source_submissions css
      JOIN users u ON u.id = css.student_user_id
@@ -729,6 +739,10 @@ async function findUserBillingStatus(userId) {
 // purchases.class_source_submission_id (eigener Bezug statt submissionId
 // mitzubenutzen, weil test_submissions und class_source_submissions
 // getrennte ID-Räume sind).
+// ✅ Klassen-Abo (2026-09-07): "classId" ergänzt - eigener, wiederum
+// paralleler Bezug für Klassen-Abo-Käufe (gehören zu einer Klasse, nicht zu
+// einer einzelnen Klassenarbeit/einem Testergebnis), siehe
+// migrations.js-Kommentar zu purchases.class_id.
 async function createPurchase({
   userId,
   stripeCheckoutSessionId,
@@ -736,12 +750,13 @@ async function createPurchase({
   topic,
   submissionId,
   classSourceSubmissionId,
+  classId,
   amountCents
 }) {
   const result = await query(
     `INSERT INTO purchases (
-       user_id, stripe_checkout_session_id, product_type, topic, submission_id, class_source_submission_id, amount_cents, status, created_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW())
+       user_id, stripe_checkout_session_id, product_type, topic, submission_id, class_source_submission_id, class_id, amount_cents, status, created_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW())
      RETURNING *`,
     [
       userId,
@@ -750,6 +765,7 @@ async function createPurchase({
       topic || null,
       submissionId || null,
       classSourceSubmissionId || null,
+      classId || null,
       amountCents || null
     ]
   );
@@ -777,12 +793,82 @@ async function completePurchase(purchaseId, stripePaymentIntentId) {
 
 async function findPurchasesByUser(userId) {
   const result = await query(
-    `SELECT id, product_type, topic, submission_id, class_source_submission_id, amount_cents, status, created_at, completed_at
+    `SELECT id, product_type, topic, submission_id, class_source_submission_id, class_id, amount_cents, status, created_at, completed_at
      FROM purchases WHERE user_id = $1 AND status = 'completed'
      ORDER BY created_at DESC`,
     [userId]
   );
   return result.rows;
+}
+
+// ============================================================================
+// KLASSEN-ABO-SAMMELZAHLUNG (2026-09-07, siehe LernApp-Preismodell-Nachhilfe-
+// Klassenmodell-2026-09-02.md Abschnitt 3.2)
+// ============================================================================
+
+// Wie viele VERSCHIEDENE Nutzer:innen haben für diese Klasse schon per
+// Klassen-Abo bezahlt? DISTINCT user_id, weil derselbe Nutzer theoretisch
+// zweimal eine Checkout-Session hätte starten können (z.B. Doppelklick) -
+// das soll nicht doppelt zum Erreichen der Kappungsgrenze zählen (siehe
+// LernApp-Preismodell-...: "gedeckelt bei 199 €/Jahr ab 20 Schüler:innen").
+async function countKlassenaboPayers(classId) {
+  const result = await query(
+    `SELECT COUNT(DISTINCT user_id)::int AS count
+     FROM purchases
+     WHERE class_id = $1 AND product_type = 'klassenabo' AND status = 'completed'`,
+    [classId]
+  );
+  return result.rows[0]?.count || 0;
+}
+
+// Setzt classes.subscription_status - wird gesetzt, sobald die
+// Kappungsgrenze erreicht ist (siehe routes/billing.js handleStripeWebhook),
+// damit auch später beitretende Klassenmitglieder automatisch freigeschaltet
+// werden (siehe activateUserForClass unten, genutzt beim Klassenbeitritt in
+// server.js POST /api/auth/join-class).
+async function updateClassSubscriptionStatus(classId, status) {
+  const result = await query(
+    `UPDATE classes SET subscription_status = $1 WHERE id = $2 RETURNING *`,
+    [status, classId]
+  );
+  return result.rows[0];
+}
+
+// ✅ Kappungsgrenze erreicht: alle NOCH NICHT zahlenden Mitglieder dieser
+// Klasse werden auf subscription_status='active' gesetzt (die schon zahlenden
+// haben ihr eigenes Abo/Kauf, das bleibt unangetastet - WHERE-Bedingung
+// überspringt bereits aktive Nutzer bewusst, statt sie zu überschreiben).
+// Nutzt dieselbe users.subscription_status-Spalte wie das individuelle
+// Pro-Abo (kein separates "wie kam der Zugriff zustande"-Feld) - das ist
+// bewusst so übernommen, dasselbe Muster wie beim Vertiefungsmodus, der auch
+// nur zwischen "Pro-Zugriff" und "Einzelkauf" unterscheidet, nicht danach,
+// über welchen Weg das Pro-Abo zustande kam.
+async function activateFreeClassMembers(classId) {
+  const result = await query(
+    `UPDATE users SET subscription_status = 'active'
+     WHERE id IN (
+       SELECT student_user_id FROM class_memberships WHERE class_id = $1
+     )
+     AND (subscription_status IS NULL OR subscription_status != 'active')
+     RETURNING id`,
+    [classId]
+  );
+  return result.rows.length;
+}
+
+// Beim Beitritt zu einer Klasse, deren Kappungsgrenze schon erreicht wurde
+// (classes.subscription_status = 'active'), soll das neue Mitglied sofort
+// mitprofitieren, statt erst auf den nächsten Kauf-Webhook warten zu müssen
+// - siehe server.js POST /api/auth/join-class.
+async function activateUserForClass(userId, classId) {
+  const cls = await findClassById(classId);
+  if (cls?.subscription_status === 'active') {
+    await query(
+      `UPDATE users SET subscription_status = 'active'
+       WHERE id = $1 AND (subscription_status IS NULL OR subscription_status != 'active')`,
+      [userId]
+    );
+  }
 }
 
 // ============================================================================
@@ -850,6 +936,12 @@ module.exports = {
   findPurchaseBySessionId,
   completePurchase,
   findPurchasesByUser,
+
+  // Klassen-Abo-Sammelzahlung
+  countKlassenaboPayers,
+  updateClassSubscriptionStatus,
+  activateFreeClassMembers,
+  activateUserForClass,
 
   // Vertiefungsmodus
   createDeepening,

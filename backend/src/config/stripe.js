@@ -14,6 +14,16 @@
 //   2. "Vertiefungsmodus" - einmalig, 2,49 € -> STRIPE_PRICE_VERTIEFUNG
 // Siehe Kommentar in routes/billing.js für den genauen Ablauf inkl.
 // Webhook-Einrichtung.
+//
+// ✅ Klassen-Abo (2026-09-07, siehe LernApp-Preismodell-Nachhilfe-
+// Klassenmodell-2026-09-02.md Abschnitt 3.2): drittes Produkt, ebenfalls
+// wiederkehrend/jährlich, aber zum ermäßigten Klassen-Preis:
+//   3. "Kapiert Klassen-Abo" - wiederkehrend/jährlich, 9,99 € ->
+//      STRIPE_PRICE_KLASSE
+// Ohne gesetzte STRIPE_PRICE_KLASSE bleibt NUR der Klassen-Abo-Checkout
+// deaktiviert (503, siehe routes/billing.js) - Pro-Abo und Vertiefungsmodus
+// laufen unabhängig davon normal weiter, genau wie beim bestehenden Muster
+// für fehlende einzelne Price-IDs.
 
 const Stripe = require('stripe');
 
@@ -21,6 +31,7 @@ const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const STRIPE_PRICE_PRO = process.env.STRIPE_PRICE_PRO;
 const STRIPE_PRICE_VERTIEFUNG = process.env.STRIPE_PRICE_VERTIEFUNG;
+const STRIPE_PRICE_KLASSE = process.env.STRIPE_PRICE_KLASSE;
 
 const isConfigured = Boolean(STRIPE_SECRET_KEY);
 
@@ -40,5 +51,6 @@ module.exports = {
   isConfigured,
   STRIPE_WEBHOOK_SECRET,
   STRIPE_PRICE_PRO,
-  STRIPE_PRICE_VERTIEFUNG
+  STRIPE_PRICE_VERTIEFUNG,
+  STRIPE_PRICE_KLASSE
 };

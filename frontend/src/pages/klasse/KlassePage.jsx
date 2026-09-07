@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, Clock, AlertTriangle, X } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
+import { ArrowLeft, CheckCircle, Clock, AlertTriangle, X, Users } from 'lucide-react';
 import Logo from '../../components/Logo';
 import AnswerReview from '../../components/AnswerReview';
 import DeepeningPanel from '../../components/DeepeningPanel';
@@ -42,6 +42,18 @@ export default function KlassePage() {
 
   const billingBanner = searchParams.get('billing');
   const autoGenerateTopic = billingBanner === 'success' ? searchParams.get('topic') : null;
+  // ✅ Klassen-Abo (2026-09-07): Rücksprung von Stripe landet (anders als
+  // beim Vertiefungsmodus-Einzelkauf) direkt hier auf der Listen-Ansicht,
+  // nicht bei einer bestimmten Klassenarbeit - eigenes Flag statt
+  // "sourceId", damit sich beide Rücksprung-Fälle nicht überschneiden.
+  const klassenaboBanner = searchParams.get('klassenabo') === '1' ? billingBanner : null;
+
+  const dismissKlassenaboBanner = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('billing');
+    next.delete('klassenabo');
+    setSearchParams(next, { replace: true });
+  };
 
   // ✅ Fix (2026-09-06): dieselbe Race-Condition wie in ResultsPage.jsx -
   // der Stripe-Webhook, der einen Vertiefungsmodus-Einzelkauf für eine
@@ -466,6 +478,32 @@ export default function KlassePage() {
             {error}
           </div>
         )}
+
+        {klassenaboBanner === 'success' && (
+          <div className="flex items-start justify-between gap-3 bg-success-light border border-success/30 rounded-lg p-4 mb-6">
+            <p className="text-success-dark text-sm">
+              Zahlung erfolgreich! Dein Zugang ist jetzt freigeschaltet.
+            </p>
+            <button onClick={dismissKlassenaboBanner} className="text-success-dark/60 hover:text-success-dark flex-shrink-0">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        {klassenaboBanner === 'cancel' && (
+          <div className="flex items-start justify-between gap-3 bg-gray-100 border border-gray-200 rounded-lg p-4 mb-6">
+            <p className="text-gray-600 text-sm">Der Bezahlvorgang wurde abgebrochen, es wurde nichts abgebucht.</p>
+            <button onClick={dismissKlassenaboBanner} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        <Link
+          to={`/klasse/${classId}/abo`}
+          className="flex items-center gap-2 text-sm text-primary hover:text-primary-dark font-medium mb-6"
+        >
+          <Users size={16} /> Klassen-Abo für die ganze Klasse ansehen
+        </Link>
 
         {sources.length === 0 ? (
           <div className="bg-cream border border-gray-100 rounded-lg p-8 text-center">

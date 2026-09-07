@@ -35,7 +35,8 @@ const {
   isConfigured,
   STRIPE_WEBHOOK_SECRET,
   STRIPE_PRICE_PRO,
-  STRIPE_PRICE_VERTIEFUNG
+  STRIPE_PRICE_VERTIEFUNG,
+  STRIPE_PRICE_KLASSE
 } = require('../config/stripe');
 const {
   updateUser,
@@ -44,8 +45,18 @@ const {
   createPurchase,
   findPurchaseBySessionId,
   completePurchase,
-  findPurchasesByUser
+  findPurchasesByUser,
+  findClassMembership,
+  countKlassenaboPayers,
+  updateClassSubscriptionStatus,
+  activateFreeClassMembers
 } = require('../store');
+
+// ✅ Klassen-Abo (2026-09-07, siehe LernApp-Preismodell-Nachhilfe-
+// Klassenmodell-2026-09-02.md Abschnitt 3.2): "gedeckelt bei 199 €/Jahr ab
+// 20 Schüler:innen" - ab dieser Anzahl zahlender Mitglieder schaltet die
+// ganze Klasse frei, statt dass jedes weitere Mitglied einzeln zahlen muss.
+const KLASSENABO_CAP_PAYERS = 20;
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -88,8 +99,8 @@ router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async 
   // Varianten sind exklusiv: entweder normaler Test-Upload ODER Klassenarbeit.
   const isClassMode = !!classSourceSubmissionId;
 
-  if (type !== 'pro' && type !== 'vertiefung') {
-    return res.status(400).json({ error: 'type muss "pro" oder "vertiefung" sein' });
+  if (type !== 'pro' && type !== 'vertiefung' && type !== 'klassenabo') {
+    return res.status(400).json({ error: 'type muss "pro", "vertiefung" oder "klassenabo" sein' });
   }
   // ✅ Fix (2026-09-06): der Einzelkauf gilt jetzt pro TEST (submissionId),
   // nicht mehr pro einzelnem Thema - siehe Kommentar bei computeWeakTopics()
@@ -102,8 +113,26 @@ router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async 
   if (type === 'vertiefung' && isClassMode && !classId) {
     return res.status(400).json({ error: 'classId ist für den Vertiefungsmodus-Einzelkauf einer Klassenarbeit erforderlich' });
   }
+  // ✅ Klassen-Abo (2026-09-07): "klassenabo" wird - genau wie das
+  // individuelle Pro-Abo - vom eingeloggten KIND-Konto aus gestartet (siehe
+  // Datei-Kopfkommentar zu routes/parent.js: es gibt bewusst kein
+  // eigenständiges Eltern-Login). Wer den Browser bedient (in der Praxis
+  // meist ein Elternteil) gibt die Zahlungsdaten auf Stripes eigener
+  // Checkout-Seite ein - genau wie beim bestehenden Pro-Abo. Einzige
+  // zusätzliche Prüfung: das eingeloggte Kind muss tatsächlich Mitglied
+  // dieser Klasse sein (sonst könnte jeder für eine fremde Klasse "spenden").
+  if (type === 'klassenabo') {
+    if (!classId) {
+      return res.status(400).json({ error: 'classId ist für das Klassen-Abo erforderlich' });
+    }
+    const membership = await findClassMembership(parseInt(classId, 10), req.user.id);
+    if (!membership) {
+      return res.status(403).json({ error: 'Du bist kein Mitglied dieser Klasse' });
+    }
+  }
 
-  const priceId = type === 'pro' ? STRIPE_PRICE_PRO : STRIPE_PRICE_VERTIEFUNG;
+  const priceId =
+    type === 'pro' ? STRIPE_PRICE_PRO : type === 'klassenabo' ? STRIPE_PRICE_KLASSE : STRIPE_PRICE_VERTIEFUNG;
   if (!priceId) {
     // Robert hat Stripe zwar konfiguriert (Secret Key gesetzt), aber die
     // Price-ID für dieses Produkt noch nicht angelegt/eingetragen.
@@ -131,18 +160,32 @@ router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async 
   } else if (type === 'vertiefung' && submissionId) {
     successUrl = `${FRONTEND_URL}/results/${submissionId}?billing=success&topic=${encodeURIComponent(topic)}`;
     cancelUrl = `${FRONTEND_URL}/results/${submissionId}?billing=cancel`;
+  } else if (type === 'klassenabo') {
+    // ✅ Klassen-Abo (2026-09-07): Rücksprung auf die Klassen-Ansicht selbst
+    // (keine eigene Bestätigungsseite nötig) - KlassePage.jsx zeigt bei
+    // "billing=success&klassenabo=1" einen Erfolgs-Banner, analog zum
+    // bestehenden Vertiefungsmodus-Banner.
+    successUrl = `${FRONTEND_URL}/klasse/${classId}?billing=success&klassenabo=1`;
+    cancelUrl = `${FRONTEND_URL}/klasse/${classId}?billing=cancel&klassenabo=1`;
   }
 
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
-    mode: type === 'pro' ? 'subscription' : 'payment',
+    mode: type === 'vertiefung' ? 'payment' : 'subscription',
     line_items: [{ price: priceId, quantity: 1 }],
     success_url: successUrl,
     cancel_url: cancelUrl,
     metadata: {
       userId: String(req.user.id),
       productType: type,
-      topic: topic || ''
+      topic: topic || '',
+      // ✅ Klassen-Abo: classId muss auch im Metadata-Objekt der Subscription-
+      // Session landen, weil der Webhook unten (checkout.session.completed,
+      // mode "subscription") sonst keinen Bezug zur Klasse hätte - anders als
+      // beim Vertiefungsmodus-Einzelkauf gibt es hier keine "purchases"-Zeile,
+      // die der Webhook stattdessen per Session-ID nachschlagen könnte
+      // (die Subscription selbst kennt nur den Nutzer, nicht die Klasse).
+      classId: type === 'klassenabo' ? String(classId) : ''
     }
   });
 
@@ -161,6 +204,24 @@ router.post('/checkout', authCheck, requireStripeConfigured, asyncHandler(async 
       topic: topic || null,
       submissionId: !isClassMode && submissionId ? parseInt(submissionId, 10) : null,
       classSourceSubmissionId: isClassMode ? parseInt(classSourceSubmissionId, 10) : null,
+      amountCents: session.amount_total ?? null
+    });
+  }
+  // ✅ Klassen-Abo (2026-09-07): abweichend vom Kommentar direkt darüber legt
+  // das Klassen-Abo TROTZDEM schon jetzt einen "pending"-Datensatz in
+  // purchases an, obwohl es (wie das Pro-Abo) eine Subscription ist - Grund:
+  // countKlassenaboPayers() (siehe store.js) muss die Kappungsgrenze
+  // ("ab 20 Schüler:innen") zählen können, und purchases ist die einzige
+  // Stelle, die einen Kauf mit einer bestimmten Klasse verknüpft
+  // (users.subscription_status kennt die Klasse nicht). Der Webhook setzt
+  // diese Zeile unten genau wie beim Einzelkauf per Session-ID auf
+  // "completed".
+  if (type === 'klassenabo') {
+    await createPurchase({
+      userId: req.user.id,
+      stripeCheckoutSessionId: session.id,
+      productType: 'klassenabo',
+      classId: parseInt(classId, 10),
       amountCents: session.amount_total ?? null
     });
   }
@@ -259,7 +320,38 @@ async function handleStripeWebhook(req, res) {
           const userId = session.metadata?.userId ? parseInt(session.metadata.userId, 10) : null;
           if (userId) {
             const subscription = await stripe.subscriptions.retrieve(session.subscription);
+            // Schaltet IMMER zuerst den zahlenden Nutzer selbst frei - gilt
+            // gleichermaßen für "pro" und "klassenabo" (dieselbe
+            // users.subscription_status-Spalte, siehe applySubscriptionToUser
+            // unten), unabhängig vom Kappungsgrenzen-Ausgleich danach.
             await applySubscriptionToUser(userId, subscription);
+          }
+
+          // ✅ Klassen-Abo (2026-09-07): zusätzlich zur eigenen Freischaltung
+          // oben die zugehörige "purchases"-Zeile abschließen (angelegt in
+          // POST /checkout) und prüfen, ob die Kappungsgrenze erreicht ist -
+          // wenn ja, den Rest der Klasse in einem Rutsch mitfreischalten.
+          if (session.metadata?.productType === 'klassenabo') {
+            const purchase = await findPurchaseBySessionId(session.id);
+            if (purchase) {
+              await completePurchase(purchase.id, null);
+            } else {
+              console.warn(`Stripe-Webhook: keine passende Klassen-Abo-Purchase zu Session ${session.id} gefunden.`);
+            }
+
+            const classId = session.metadata?.classId ? parseInt(session.metadata.classId, 10) : null;
+            if (classId) {
+              const payerCount = await countKlassenaboPayers(classId);
+              if (payerCount >= KLASSENABO_CAP_PAYERS) {
+                await updateClassSubscriptionStatus(classId, 'active');
+                const activatedCount = await activateFreeClassMembers(classId);
+                console.log(
+                  `✅ Klassen-Abo-Kappungsgrenze erreicht (Klasse ${classId}, ${payerCount} zahlende Mitglieder) - ${activatedCount} weitere Mitglieder freigeschaltet.`
+                );
+              }
+            } else {
+              console.warn(`Stripe-Webhook: Klassen-Abo-Session ${session.id} ohne classId in metadata.`);
+            }
           }
         }
         break;

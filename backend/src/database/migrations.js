@@ -122,6 +122,26 @@ async function runMigrations() {
     ALTER TABLE class_source_submissions ADD COLUMN IF NOT EXISTS answers_json JSONB
   `);
 
+  // ✅ Draft/Publish für Klassenarbeiten (2026-09-07, siehe LernApp-Vollaudit
+  // Plan für nächste Woche Punkt 17): vorher war eine Klassenarbeit sofort
+  // nach dem Anlegen für die ganze Klasse sichtbar, sobald die KI-
+  // Generierung fertig war (status='completed') - die Lehrkraft konnte die
+  // generierten Fragen nicht mehr vorher gegenprüfen. "visibility" ist
+  // bewusst ein eigenes Feld statt "status" (mit)zubenutzen: "status"
+  // beschreibt den Verarbeitungszustand (pending/completed), "visibility"
+  // eine davon unabhängige redaktionelle Entscheidung der Lehrkraft
+  // (draft/published) - ein fertig generierter Test kann bewusst als Draft
+  // liegen bleiben, ein noch nicht fertiger ist nie sichtbar, unabhängig
+  // vom visibility-Wert (siehe Sichtbarkeits-Check in routes/classes.js).
+  // DEFAULT 'published' gilt nur für die Spalten-Befüllung bestehender
+  // Zeilen bei diesem ALTER TABLE (Postgres füllt sie automatisch) - damit
+  // bleiben bereits laufende Klassenarbeiten für Schüler:innen weiterhin
+  // sichtbar. Neue Zeilen setzen "draft" explizit in createClassSource()
+  // (store.js), der Spalten-Default greift für sie also nie.
+  await query(`
+    ALTER TABLE class_sources ADD COLUMN IF NOT EXISTS visibility VARCHAR(20) NOT NULL DEFAULT 'published'
+  `);
+
   // ---- Zahlungen/Stripe (2026-09-04, siehe LernApp-Vollaudit-2026-09-03.md,
   // Plan für nächste Woche) ----
   //
@@ -244,6 +264,34 @@ async function runMigrations() {
   console.log('✅ Vertiefungsmodus-Tabelle geprüft/angelegt (deepenings).');
   console.log('✅ sources.title Spalte geprüft/angelegt.');
   console.log('✅ Vertiefungsmodus/AnswerReview für Klassenarbeiten geprüft/angelegt (class_source_submissions.answers_json, purchases/deepenings.class_source_submission_id).');
+  console.log('✅ Draft/Publish für Klassenarbeiten geprüft/angelegt (class_sources.visibility).');
+
+  // ---- Klassen-Abo-Sammelzahlung (2026-09-07, siehe LernApp-Preismodell-
+  // Nachhilfe-Klassenmodell-2026-09-02.md Abschnitt 3.2) ----
+  //
+  // WICHTIG (bereits im Konzept entschieden, hier nur umgesetzt): jede
+  // Familie bezahlt für ihr eigenes Kind einzeln (Sammel-Zahlungslink an die
+  // Eltern) - die Lehrkraft zahlt NICHT für die ganze Klasse vor. Rechtlich
+  // nötig, weil Minderjährige selbst keinen Zahlungsvertrag eingehen können
+  // (§§107/108 BGB) - jede Familie wird eigener Vertragspartner. Technisch
+  // bedeutet das: derselbe kind-initiierte Checkout-Ablauf wie beim
+  // bestehenden Einzel-Pro-Abo (routes/billing.js POST /checkout,
+  // authCheck = Kind-Login, KEIN separates Eltern-Login/-Registrierung
+  // nötig - siehe routes/parent.js, dort gibt es bewusst keine eigenständige
+  // Registrierungs-Route), nur mit einem neuen product type 'klassenabo',
+  // einem ermäßigten Stripe-Preis und einer zusätzlichen Mitgliedschafts-
+  // Prüfung (die zahlende Person muss tatsächlich Mitglied dieser Klasse
+  // sein).
+  //
+  // Eigene, parallele Bezugsspalte statt submission_id/
+  // class_source_submission_id mitzubenutzen - ein Klassen-Abo-Kauf gehört
+  // zu einer Klasse, nicht zu einer einzelnen Klassenarbeit/einem
+  // Testergebnis.
+  await query(`
+    ALTER TABLE purchases ADD COLUMN IF NOT EXISTS class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL
+  `);
+
+  console.log('✅ Klassen-Abo-Sammelzahlung geprüft/angelegt (purchases.class_id).');
 }
 
 module.exports = { runMigrations };

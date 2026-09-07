@@ -13,13 +13,23 @@ const express = require('express');
 const authCheck = require('../middleware/authCheck');
 const {
   findClassMembership,
+  findClassById,
+  findMembersByClass,
   findClassSourcesByClass,
   findClassSourceById,
   findClassSourceSubmissionByStudent,
   createClassSourceSubmission,
   findUserBillingStatus,
-  findPurchasesByUser
+  findPurchasesByUser,
+  countKlassenaboPayers
 } = require('../store');
+
+// ✅ Klassen-Abo (2026-09-07): dieselben Werte wie in routes/billing.js
+// (KLASSENABO_CAP_PAYERS) und im Preismodell-Dokument - hier nur für die
+// Anzeige auf der Klassen-Abo-Seite (frontend), keine Zahlungslogik selbst.
+const KLASSENABO_PRICE_PER_STUDENT_CENTS = 999;
+const KLASSENABO_CAP_CENTS = 19900;
+const KLASSENABO_CAP_PAYERS = 20;
 
 const router = express.Router();
 
@@ -89,7 +99,14 @@ router.get('/:classId/sources', authCheck, async (req, res) => {
     const classId = await requireMembership(req, res);
     if (!classId) return;
 
-    const sources = await findClassSourcesByClass(classId);
+    // ✅ Draft/Publish (2026-09-07): nur veröffentlichte Klassenarbeiten
+    // erscheinen in der Schüler-Liste - eine noch nicht freigegebene bleibt
+    // für die Lehrkraft (routes/teacher.js, dort ohne diesen Filter) sicht-
+    // bar, für die Klasse aber nicht. Gefiltert hier statt in
+    // findClassSourcesByClass() selbst, weil dieselbe Store-Funktion auch
+    // vom Lehrer-Pfad genutzt wird, der bewusst ALLE Status sehen soll.
+    const allSources = await findClassSourcesByClass(classId);
+    const sources = allSources.filter((s) => s.visibility === 'published');
     const sourcesWithStatus = await Promise.all(
       sources.map(async (source) => {
         const submission = await findClassSourceSubmissionByStudent(source.id, req.user.id);
@@ -128,6 +145,13 @@ router.get('/:classId/sources/:sourceId', authCheck, async (req, res) => {
     if (!source || source.class_id !== classId) {
       return res.status(404).json({ error: 'Klassenarbeit nicht gefunden' });
     }
+    // ✅ Draft/Publish (2026-09-07): verhindert, dass ein Schüler eine noch
+    // nicht veröffentlichte Klassenarbeit direkt über die sourceId aufruft
+    // (URL erraten/eine alte, aus der Liste bereits entfernte ID) - der
+    // Listen-Filter oben allein würde das nicht abdecken.
+    if (source.visibility !== 'published') {
+      return res.status(404).json({ error: 'Klassenarbeit nicht gefunden' });
+    }
     if (!source.test) {
       return res.status(404).json({ error: 'Test noch nicht bereit' });
     }
@@ -150,6 +174,12 @@ router.post('/:classId/sources/:sourceId/submit', authCheck, async (req, res) =>
     const sourceId = parseInt(req.params.sourceId, 10);
     const source = await findClassSourceById(sourceId);
     if (!source || source.class_id !== classId || !source.test) {
+      return res.status(404).json({ error: 'Klassenarbeit nicht gefunden' });
+    }
+    // ✅ Draft/Publish (2026-09-07): gleicher Schutz wie beim Laden des Tests
+    // oben - eine unveröffentlichte Klassenarbeit lässt sich nicht
+    // abschicken, auch nicht mit einer direkt konstruierten Anfrage.
+    if (source.visibility !== 'published') {
       return res.status(404).json({ error: 'Klassenarbeit nicht gefunden' });
     }
 
@@ -257,6 +287,46 @@ router.get('/:classId/sources/:sourceId/result', authCheck, async (req, res) => 
   } catch (error) {
     console.error('Class Source Result Error:', error);
     return res.status(500).json({ error: 'Ergebnis konnte nicht geladen werden' });
+  }
+});
+
+// ✅ Klassen-Abo (2026-09-07): Datengrundlage für die Klassen-Abo-Seite
+// (frontend, neue Route z.B. /klasse/:classId/abo) - zeigt Klassenname,
+// Mitgliederzahl, wie viele schon bezahlt haben und ob die Kappungsgrenze
+// bereits erreicht ist (dann lohnt sich für weitere Mitglieder kein Kauf
+// mehr, sie sind schon automatisch freigeschaltet).
+router.get('/:classId/klassenabo-status', authCheck, async (req, res) => {
+  try {
+    const classId = await requireMembership(req, res);
+    if (!classId) return;
+
+    const [cls, members, payerCount] = await Promise.all([
+      findClassById(classId),
+      findMembersByClass(classId),
+      countKlassenaboPayers(classId)
+    ]);
+
+    const billing = await findUserBillingStatus(req.user.id);
+    const alreadyActive = cls?.subscription_status === 'active' || billing?.subscription_status === 'active';
+
+    return res.json({
+      classId,
+      className: cls?.name || '',
+      memberCount: members.length,
+      payerCount,
+      capPayers: KLASSENABO_CAP_PAYERS,
+      capReached: cls?.subscription_status === 'active',
+      pricePerStudentCents: KLASSENABO_PRICE_PER_STUDENT_CENTS,
+      capCents: KLASSENABO_CAP_CENTS,
+      // true, wenn dieser eingeloggte Nutzer bereits Zugriff hat (eigenes
+      // Pro-Abo, eigener Klassen-Abo-Kauf, oder die Klasse hat die
+      // Kappungsgrenze schon erreicht) - Frontend blendet den Kaufen-Button
+      // dann aus.
+      alreadyActive
+    });
+  } catch (error) {
+    console.error('Klassen-Abo-Status Error:', error);
+    return res.status(500).json({ error: 'Klassen-Abo-Status konnte nicht geladen werden' });
   }
 });
 

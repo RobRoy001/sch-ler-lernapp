@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Copy, Check, Users, FileText, Plus, X, Upload } from 'lucide-react';
+import { ArrowLeft, Copy, Check, Users, FileText, Plus, X, Upload, Eye, EyeOff, TrendingDown } from 'lucide-react';
 import Logo from '../../components/Logo';
 import { API_BASE_URL } from '../../config/api';
 
@@ -29,6 +29,7 @@ export default function LehrerKlassePage() {
   const [sources, setSources] = useState([]);
   const [error, setError] = useState('');
   const [codeCopied, setCodeCopied] = useState(false);
+  const [aboLinkCopied, setAboLinkCopied] = useState(false);
 
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -38,6 +39,11 @@ export default function LehrerKlassePage() {
   const [aiConsent, setAiConsent] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  // ✅ Draft/Publish (2026-09-07): trackt, für welche sourceId gerade ein
+  // Veröffentlichen/Zurückziehen-Request läuft, damit nur der betroffene
+  // Button einen Ladezustand zeigt statt der ganzen Liste.
+  const [publishLoadingId, setPublishLoadingId] = useState(null);
+  const [publishError, setPublishError] = useState('');
 
   useEffect(() => {
     loadData();
@@ -104,6 +110,21 @@ export default function LehrerKlassePage() {
     setTimeout(() => setCodeCopied(false), 2000);
   };
 
+  // ✅ Klassen-Abo-Sammelzahlung (2026-09-07): der Link führt auf die
+  // Schüler-seitige Klassen-Abo-Seite (frontend/pages/klasse/KlassenAboPage.jsx)
+  // - die Lehrkraft selbst kann dort NICHT bezahlen (sie ist kein Kind-Konto,
+  // siehe Kommentar dort), sondern gibt den Link an die Eltern weiter
+  // ("Sammel-Zahlungslink an die Eltern", siehe Preismodell-Dokument
+  // Abschnitt 3.2). window.location.origin statt einer hartcodierten Domain,
+  // damit der Link automatisch zu Vorschau-/Staging-Umgebungen passt.
+  const handleCopyAboLink = () => {
+    if (!cls?.id) return;
+    const link = `${window.location.origin}/klasse/${cls.id}/abo`;
+    navigator.clipboard.writeText(link).catch(() => {});
+    setAboLinkCopied(true);
+    setTimeout(() => setAboLinkCopied(false), 2000);
+  };
+
   const handleFileSelect = (e) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
@@ -167,6 +188,29 @@ export default function LehrerKlassePage() {
     }
   };
 
+  // ✅ Draft/Publish (2026-09-07): ein Klick löst je nach aktuellem Stand
+  // publish oder unpublish aus - "nextVisibility" bestimmt nur, welcher
+  // Endpunkt aufgerufen wird, nicht was serverseitig passiert (der Server
+  // ist die alleinige Quelle der Wahrheit für den tatsächlichen Wert danach).
+  const handleTogglePublish = async (source) => {
+    setPublishError('');
+    setPublishLoadingId(source.id);
+    const action = source.visibility === 'published' ? 'unpublish' : 'publish';
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/teacher/classes/${id}/sources/${source.id}/${action}`,
+        { method: 'POST', credentials: 'include' }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Aktion fehlgeschlagen');
+      await refreshProgress();
+    } catch (err) {
+      setPublishError(err.message);
+    } finally {
+      setPublishLoadingId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-canvas flex items-center justify-center">
@@ -213,6 +257,26 @@ export default function LehrerKlassePage() {
               >
                 {codeCopied ? <Check size={16} /> : <Copy size={16} />}
                 {codeCopied ? 'Kopiert!' : 'Kopieren'}
+              </button>
+            </div>
+
+            <div className="bg-accent/5 border border-accent/20 rounded-lg p-5 mb-6 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">
+                  Klassen-Abo-Link für die Eltern
+                </p>
+                <p className="text-sm text-gray-600">
+                  {cls.subscriptionStatus === 'active'
+                    ? 'Kappungsgrenze erreicht - die ganze Klasse ist bereits freigeschaltet.'
+                    : 'Jede Familie zahlt für ihr eigenes Kind zum ermäßigten Klassen-Preis.'}
+                </p>
+              </div>
+              <button
+                onClick={handleCopyAboLink}
+                className="flex items-center gap-2 bg-white border border-accent/30 hover:bg-accent/10 text-accent-dark px-4 py-2 rounded-md font-semibold text-sm transition flex-shrink-0"
+              >
+                {aboLinkCopied ? <Check size={16} /> : <Copy size={16} />}
+                {aboLinkCopied ? 'Kopiert!' : 'Link kopieren'}
               </button>
             </div>
 
@@ -358,6 +422,12 @@ export default function LehrerKlassePage() {
               </form>
             )}
 
+            {publishError && (
+              <div className="bg-error-light border border-error text-error-dark text-sm p-3 rounded-md mb-4">
+                {publishError}
+              </div>
+            )}
+
             {sources.length === 0 ? (
               <div className="bg-cream border border-gray-100 rounded-lg p-8 text-center">
                 <FileText size={32} className="mx-auto mb-3 text-gray-300" />
@@ -389,20 +459,70 @@ export default function LehrerKlassePage() {
                       <>
                         <div className="flex items-start justify-between mb-3">
                           <div>
-                            <p className="font-semibold text-gray-900">{source.title}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-gray-900">{source.title}</p>
+                              <span
+                                className={`text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
+                                  source.visibility === 'published'
+                                    ? 'bg-success-light text-success-dark'
+                                    : 'bg-gray-100 text-gray-500'
+                                }`}
+                              >
+                                {source.visibility === 'published' ? 'Veröffentlicht' : 'Entwurf'}
+                              </span>
+                            </div>
                             <p className="text-xs text-gray-500 mt-0.5">
                               {source.questionCount} Fragen
                             </p>
                           </div>
-                          <span className="text-sm font-semibold text-gray-700">
+                          <span className="text-sm font-semibold text-gray-700 whitespace-nowrap">
                             {source.completedCount}/{source.memberCount} bearbeitet
                           </span>
                         </div>
+
+                        <button
+                          onClick={() => handleTogglePublish(source)}
+                          disabled={publishLoadingId === source.id}
+                          className={`flex items-center gap-2 mb-3 px-3 py-1.5 rounded-md font-semibold text-xs transition disabled:opacity-60 ${
+                            source.visibility === 'published'
+                              ? 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-700'
+                              : 'bg-primary hover:bg-primary-dark text-white'
+                          }`}
+                        >
+                          {source.visibility === 'published' ? <EyeOff size={14} /> : <Eye size={14} />}
+                          {publishLoadingId === source.id
+                            ? 'Wird gespeichert…'
+                            : source.visibility === 'published'
+                            ? 'Zurückziehen (nicht mehr sichtbar für die Klasse)'
+                            : 'Für die Klasse veröffentlichen'}
+                        </button>
 
                         {source.avgAccuracy !== null && (
                           <p className="text-sm text-primary font-semibold mb-3">
                             Durchschnitt: {source.avgAccuracy}%
                           </p>
+                        )}
+
+                        {/* ✅ Themen-Aggregation (2026-09-07): welche Themen
+                            fallen über die ganze Klasse hinweg auf - nur
+                            sichtbar, sobald mindestens eine Einreichung mit
+                            Themen-Tags vorliegt (Vokabeltests haben keine). */}
+                        {source.classWeakTopics && source.classWeakTopics.length > 0 && (
+                          <div className="bg-accent/10 border border-accent/20 rounded-md p-3 mb-3">
+                            <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-accent-dark mb-2">
+                              <TrendingDown size={13} /> Schwächste Themen der Klasse
+                            </p>
+                            <div className="space-y-1">
+                              {source.classWeakTopics.map((t) => (
+                                <div key={t.topic} className="flex items-center justify-between text-sm">
+                                  <span className="text-gray-700">{t.topic}</span>
+                                  <span className="text-gray-500 text-xs">
+                                    {t.studentsAffected}/{source.completedCount} Schüler:innen betroffen
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         )}
 
                         {source.submissions.length > 0 && (

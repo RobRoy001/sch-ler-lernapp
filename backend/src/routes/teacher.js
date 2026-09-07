@@ -54,6 +54,48 @@ const generateTeacherToken = (teacher) =>
 
 const publicTeacher = (teacher) => ({ id: teacher.id, email: teacher.email, name: teacher.name });
 
+// ✅ Themen-Aggregation für die Klasse (2026-09-07, siehe LernApp-Vollaudit
+// Plan Punkt 16): eigene Kopie von computeWeakTopics (routes/processing.js,
+// routes/classes.js) statt gemeinsamem Import - gleiche Begründung wie
+// überall sonst in diesem Datei-Paar (Lehrer- und Schüler-Pfad sollen sich
+// nie versehentlich gegenseitig beeinflussen). Unterschied zu den anderen
+// Varianten: hier werden die answers_json-Arrays ALLER Einreichungen einer
+// Klassenarbeit zusammen ausgewertet statt nur einer einzelnen - "wie viele
+// verschiedene Schüler:innen haben bei diesem Thema mindestens einmal
+// falsch gelegen" (nicht wie oft insgesamt, das würde eine Klasse mit
+// vielen Einreichungen künstlich schlechter aussehen lassen als eine mit
+// wenigen).
+function computeClassWeakTopics(submissions) {
+  const byTopic = new Map();
+
+  for (const submission of submissions) {
+    const answers = submission.answers_json || [];
+    const studentsSeenForTopic = new Set();
+
+    for (const a of answers) {
+      if (!a.topic) continue;
+      if (!byTopic.has(a.topic)) {
+        byTopic.set(a.topic, { topic: a.topic, wrongCount: 0, totalCount: 0, studentsAffected: 0 });
+      }
+      const entry = byTopic.get(a.topic);
+      entry.totalCount++;
+      if (!a.is_correct) {
+        entry.wrongCount++;
+        // Pro Schüler:in nur einmal zählen, auch wenn mehrere Fragen zum
+        // selben Thema falsch beantwortet wurden.
+        if (!studentsSeenForTopic.has(a.topic)) {
+          entry.studentsAffected++;
+          studentsSeenForTopic.add(a.topic);
+        }
+      }
+    }
+  }
+
+  return Array.from(byTopic.values())
+    .filter((t) => t.wrongCount > 0)
+    .sort((a, b) => b.studentsAffected - a.studentsAffected || b.wrongCount - a.wrongCount);
+}
+
 const publicClass = (cls) => ({
   id: cls.id,
   name: cls.name,
@@ -310,10 +352,14 @@ router.get('/classes/:id/progress', teacherAuthCheck, async (req, res) => {
           title: source.title,
           status: source.status,
           progress: source.progress || 0,
+          visibility: source.visibility,
           questionCount: source.test?.questions?.length || 0,
           completedCount: submissions.length,
           memberCount: members.length,
           avgAccuracy,
+          // ✅ Themen-Aggregation (2026-09-07): welche Themen fallen über die
+          // ganze Klasse hinweg auf, nicht nur die Gesamt-Erfolgsquote.
+          classWeakTopics: computeClassWeakTopics(submissions),
           submissions: submissions.map((s) => ({
             studentId: s.student_id,
             studentName: s.student_name,
@@ -384,6 +430,7 @@ router.post('/classes/:id/sources', teacherAuthCheck, upload.single('file'), asy
         title: source.title,
         status: source.status,
         progress: source.progress || 0,
+        visibility: source.visibility,
         createdAt: source.created_at
       }
     });
@@ -424,6 +471,7 @@ router.get('/classes/:id/sources/:sourceId', teacherAuthCheck, async (req, res) 
         title: source.title,
         status: source.status,
         progress: source.progress || 0,
+        visibility: source.visibility,
         test: source.test,
         createdAt: source.created_at
       }
@@ -431,6 +479,60 @@ router.get('/classes/:id/sources/:sourceId', teacherAuthCheck, async (req, res) 
   } catch (error) {
     console.error('Class Source Detail Error:', error);
     return res.status(500).json({ error: 'Klassenarbeit konnte nicht geladen werden' });
+  }
+});
+
+// ✅ Draft/Publish (2026-09-07, siehe LernApp-Vollaudit Plan Punkt 17):
+// vorher war eine fertig generierte Klassenarbeit sofort für die ganze
+// Klasse sichtbar, die Lehrkraft konnte die KI-Fragen nicht mehr vorher
+// gegenprüfen. Publish setzt "visibility" explizit von 'draft' auf
+// 'published' - erst danach taucht die Klassenarbeit in der Schüler-Liste
+// auf (siehe Sichtbarkeits-Check in routes/classes.js). Nur möglich, wenn
+// die Generierung tatsächlich fertig ist (status:'completed') - ein noch
+// leerer/in Arbeit befindlicher Test lässt sich nicht veröffentlichen.
+router.post('/classes/:id/sources/:sourceId/publish', teacherAuthCheck, async (req, res) => {
+  try {
+    const cls = await loadOwnedClass(req, res);
+    if (!cls) return;
+
+    const sourceId = parseInt(req.params.sourceId, 10);
+    const source = await findClassSourceById(sourceId);
+    if (!source || source.class_id !== cls.id) {
+      return res.status(404).json({ error: 'Klassenarbeit nicht gefunden' });
+    }
+    if (source.status !== 'completed') {
+      return res.status(400).json({ error: 'Diese Klassenarbeit ist noch nicht fertig generiert' });
+    }
+
+    const updated = await updateClassSource(sourceId, { visibility: 'published' });
+    return res.json({ success: true, source: { id: updated.id, visibility: updated.visibility } });
+  } catch (error) {
+    console.error('Publish Class Source Error:', error);
+    return res.status(500).json({ error: 'Klassenarbeit konnte nicht veröffentlicht werden' });
+  }
+});
+
+// Rücknahme einer Veröffentlichung (z.B. wenn die Lehrkraft nachträglich
+// einen Fehler in den generierten Fragen findet) - Schüler:innen, die die
+// Klassenarbeit schon gemacht haben, behalten ihr Ergebnis trotzdem
+// einsehbar (GET .../result in routes/classes.js prüft "visibility" bewusst
+// nicht), nur "Test starten" verschwindet wieder aus der Liste.
+router.post('/classes/:id/sources/:sourceId/unpublish', teacherAuthCheck, async (req, res) => {
+  try {
+    const cls = await loadOwnedClass(req, res);
+    if (!cls) return;
+
+    const sourceId = parseInt(req.params.sourceId, 10);
+    const source = await findClassSourceById(sourceId);
+    if (!source || source.class_id !== cls.id) {
+      return res.status(404).json({ error: 'Klassenarbeit nicht gefunden' });
+    }
+
+    const updated = await updateClassSource(sourceId, { visibility: 'draft' });
+    return res.json({ success: true, source: { id: updated.id, visibility: updated.visibility } });
+  } catch (error) {
+    console.error('Unpublish Class Source Error:', error);
+    return res.status(500).json({ error: 'Veröffentlichung konnte nicht zurückgenommen werden' });
   }
 });
 

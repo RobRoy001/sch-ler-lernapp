@@ -19,6 +19,7 @@ import LehrerLoginPage from './pages/lehrer/LehrerLoginPage';
 import LehrerKlassenPage from './pages/lehrer/LehrerKlassenPage';
 import LehrerKlassePage from './pages/lehrer/LehrerKlassePage';
 import KlassePage from './pages/klasse/KlassePage';
+import KlassenAboPage from './pages/klasse/KlassenAboPage';
 import Logo from './components/Logo';
 import { API_BASE_URL } from './config/api';
 
@@ -144,6 +145,7 @@ function App() {
                 Zweig, im Gegensatz zu /lehrer/* und /eltern/* oben, die
                 unabhängig vom Kind-Login funktionieren. */}
             <Route path="/klasse/:classId" element={<KlassePage />} />
+            <Route path="/klasse/:classId/abo" element={<KlassenAboPage />} />
             {/* Auch erreichbar, falls z.B. ein Elternteil den Link auf einem
                 Gerät öffnet, auf dem gerade ein anderes Konto eingeloggt ist. */}
             <Route path="/parent-consent" element={<ParentConsentPage />} />
