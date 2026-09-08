@@ -2,6 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Copy, Check, Users, FileText, Plus, X, Upload, Eye, EyeOff, TrendingDown } from 'lucide-react';
 import Logo from '../../components/Logo';
+import Button from '../../components/Button';
+import Card from '../../components/Card';
+import Alert from '../../components/Alert';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import Footer from '../../components/Footer';
 import { API_BASE_URL } from '../../config/api';
 
 // Lehrer-Portal Klassen-Detail (Phase 1, siehe claude/Lehrer-Portal-Konzept-2026-09-03.md
@@ -18,6 +23,13 @@ import { API_BASE_URL } from '../../config/api';
 // jetzt mit echtem Datei-Upload, Format-/Umfang-Auswahl, Einwilligungs-
 // Checkbox UND einem Verarbeitungszustand (Polling), weil die Erstellung
 // nicht mehr sofort fertig ist.
+//
+// ✅ Design-Refactor (2026-09-07): Buttons/Cards/Loading/Fehler-Banner
+// laufen jetzt über die gemeinsamen Komponenten in components/ statt über
+// in jeder Seite neu getippte Tailwind-Klassen (siehe Button.jsx, Card.jsx,
+// Alert.jsx, LoadingSpinner.jsx). Verhalten unverändert, nur die
+// Darstellung kommt jetzt aus einer Quelle. Footer mit Datenschutz/
+// Impressum/AGB-Links neu ergänzt - fehlte auf dieser Seite komplett.
 export default function LehrerKlassePage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -28,6 +40,7 @@ export default function LehrerKlassePage() {
   const [members, setMembers] = useState([]);
   const [sources, setSources] = useState([]);
   const [error, setError] = useState('');
+
   const [codeCopied, setCodeCopied] = useState(false);
   const [aboLinkCopied, setAboLinkCopied] = useState(false);
 
@@ -39,6 +52,7 @@ export default function LehrerKlassePage() {
   const [aiConsent, setAiConsent] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+
   // ✅ Draft/Publish (2026-09-07): trackt, für welche sourceId gerade ein
   // Veröffentlichen/Zurückziehen-Request läuft, damit nur der betroffene
   // Button einen Ladezustand zeigt statt der ganzen Liste.
@@ -62,6 +76,7 @@ export default function LehrerKlassePage() {
     const timer = setInterval(() => {
       refreshProgress().catch(() => {});
     }, 3000);
+
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources]);
@@ -84,17 +99,19 @@ export default function LehrerKlassePage() {
       const detailResponse = await fetch(`${API_BASE_URL}/teacher/classes/${id}`, {
         credentials: 'include'
       });
+
       if (detailResponse.status === 401) {
         navigate('/lehrer/login');
         return;
       }
+
       const detailData = await detailResponse.json();
       if (!detailResponse.ok) {
         throw new Error(detailData.error || 'Klasse konnte nicht geladen werden');
       }
+
       setCls(detailData.class);
       setMembers(detailData.members || []);
-
       await refreshProgress();
     } catch (err) {
       setError(err.message);
@@ -146,6 +163,7 @@ export default function LehrerKlassePage() {
   const handleUpload = async (e) => {
     e.preventDefault();
     setUploadError('');
+
     if (!newTitle.trim()) {
       setUploadError('Titel/Thema erforderlich');
       return;
@@ -172,6 +190,7 @@ export default function LehrerKlassePage() {
         credentials: 'include',
         body: formData
       });
+
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Klassenarbeit konnte nicht angelegt werden');
 
@@ -196,6 +215,7 @@ export default function LehrerKlassePage() {
     setPublishError('');
     setPublishLoadingId(source.id);
     const action = source.visibility === 'published' ? 'unpublish' : 'publish';
+
     try {
       const response = await fetch(
         `${API_BASE_URL}/teacher/classes/${id}/sources/${source.id}/${action}`,
@@ -212,11 +232,7 @@ export default function LehrerKlassePage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-canvas flex items-center justify-center">
-        <p className="text-gray-500 font-body">Wird geladen…</p>
-      </div>
-    );
+    return <LoadingSpinner />;
   }
 
   return (
@@ -229,11 +245,7 @@ export default function LehrerKlassePage() {
           <ArrowLeft size={18} /> Zurück zu meinen Klassen
         </button>
 
-        {error && (
-          <div className="bg-error-light border border-error text-error-dark text-sm p-3 rounded-md mb-6">
-            {error}
-          </div>
-        )}
+        {error && <Alert tone="error">{error}</Alert>}
 
         {cls && (
           <>
@@ -242,7 +254,7 @@ export default function LehrerKlassePage() {
               <h1 className="font-display text-2xl font-bold text-gray-900">{cls.name}</h1>
             </div>
 
-            <div className="bg-primary/5 border border-primary/20 rounded-lg p-5 mb-6 flex items-center justify-between">
+            <Card tone="accent" className="mb-6 flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">
                   Beitritts-Code für deine Schüler
@@ -251,16 +263,12 @@ export default function LehrerKlassePage() {
                   {cls.classCode}
                 </p>
               </div>
-              <button
-                onClick={handleCopyCode}
-                className="flex items-center gap-2 bg-white border border-primary/30 hover:bg-primary-light text-primary px-4 py-2 rounded-md font-semibold text-sm transition"
-              >
-                {codeCopied ? <Check size={16} /> : <Copy size={16} />}
+              <Button variant="outline" icon={codeCopied ? Check : Copy} onClick={handleCopyCode}>
                 {codeCopied ? 'Kopiert!' : 'Kopieren'}
-              </button>
-            </div>
+              </Button>
+            </Card>
 
-            <div className="bg-accent/5 border border-accent/20 rounded-lg p-5 mb-6 flex items-center justify-between gap-3">
+            <Card tone="accentWarm" className="mb-6 flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">
                   Klassen-Abo-Link für die Eltern
@@ -271,16 +279,17 @@ export default function LehrerKlassePage() {
                     : 'Jede Familie zahlt für ihr eigenes Kind zum ermäßigten Klassen-Preis.'}
                 </p>
               </div>
-              <button
+              <Button
+                variant="outlineAccent"
+                icon={aboLinkCopied ? Check : Copy}
                 onClick={handleCopyAboLink}
-                className="flex items-center gap-2 bg-white border border-accent/30 hover:bg-accent/10 text-accent-dark px-4 py-2 rounded-md font-semibold text-sm transition flex-shrink-0"
+                className="flex-shrink-0"
               >
-                {aboLinkCopied ? <Check size={16} /> : <Copy size={16} />}
                 {aboLinkCopied ? 'Kopiert!' : 'Link kopieren'}
-              </button>
-            </div>
+              </Button>
+            </Card>
 
-            <div className="bg-cream border border-gray-100 rounded-lg p-5 shadow-sm mb-6">
+            <Card tone="muted" className="mb-6">
               <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-gray-400 mb-3">
                 <Users size={14} /> Mitglieder ({members.length})
               </h2>
@@ -301,17 +310,17 @@ export default function LehrerKlassePage() {
                   ))}
                 </div>
               )}
-            </div>
+            </Card>
 
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-bold text-gray-900">Klassenarbeiten</h2>
-              <button
+              <Button
+                variant="primary"
+                icon={showUploadForm ? X : Plus}
                 onClick={() => setShowUploadForm((v) => !v)}
-                className="flex items-center gap-2 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md font-semibold text-sm transition"
               >
-                {showUploadForm ? <X size={16} /> : <Plus size={16} />}
                 {showUploadForm ? 'Abbrechen' : 'Neue Klassenarbeit'}
-              </button>
+              </Button>
             </div>
 
             {showUploadForm && (
@@ -407,41 +416,39 @@ export default function LehrerKlassePage() {
                   </span>
                 </label>
 
-                <button
+                <Button
                   type="submit"
-                  disabled={uploadLoading}
-                  className="w-full bg-primary hover:bg-primary-dark text-white font-semibold rounded-md h-11 transition disabled:opacity-60"
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  loading={uploadLoading}
+                  loadingText="Wird hochgeladen…"
                 >
-                  {uploadLoading ? 'Wird hochgeladen…' : 'Klassenarbeit erstellen'}
-                </button>
+                  Klassenarbeit erstellen
+                </Button>
+
                 <p className="text-xs text-gray-500">
                   Die Fragen werden nach dem Hochladen im Hintergrund erzeugt (dauert ca.
                   15–30 Sekunden) und erscheinen unten, sobald sie fertig sind.
                 </p>
+
                 {uploadError && <p className="text-error-dark text-sm">{uploadError}</p>}
               </form>
             )}
 
-            {publishError && (
-              <div className="bg-error-light border border-error text-error-dark text-sm p-3 rounded-md mb-4">
-                {publishError}
-              </div>
-            )}
+            {publishError && <Alert tone="error">{publishError}</Alert>}
 
             {sources.length === 0 ? (
-              <div className="bg-cream border border-gray-100 rounded-lg p-8 text-center">
+              <Card tone="muted" padding="p-8" className="text-center">
                 <FileText size={32} className="mx-auto mb-3 text-gray-300" />
                 <p className="text-gray-500 text-sm">
                   Noch keine Klassenarbeit angelegt.
                 </p>
-              </div>
+              </Card>
             ) : (
               <div className="space-y-4">
                 {sources.map((source) => (
-                  <div
-                    key={source.id}
-                    className="bg-white border border-gray-100 rounded-lg p-5 shadow-sm"
-                  >
+                  <Card key={source.id}>
                     {source.status !== 'completed' ? (
                       <div>
                         <p className="font-semibold text-gray-900 mb-2">{source.title}</p>
@@ -480,22 +487,19 @@ export default function LehrerKlassePage() {
                           </span>
                         </div>
 
-                        <button
+                        <Button
+                          variant={source.visibility === 'published' ? 'secondary' : 'primary'}
+                          size="sm"
+                          icon={source.visibility === 'published' ? EyeOff : Eye}
                           onClick={() => handleTogglePublish(source)}
-                          disabled={publishLoadingId === source.id}
-                          className={`flex items-center gap-2 mb-3 px-3 py-1.5 rounded-md font-semibold text-xs transition disabled:opacity-60 ${
-                            source.visibility === 'published'
-                              ? 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-700'
-                              : 'bg-primary hover:bg-primary-dark text-white'
-                          }`}
+                          loading={publishLoadingId === source.id}
+                          loadingText="Wird gespeichert…"
+                          className="mb-3"
                         >
-                          {source.visibility === 'published' ? <EyeOff size={14} /> : <Eye size={14} />}
-                          {publishLoadingId === source.id
-                            ? 'Wird gespeichert…'
-                            : source.visibility === 'published'
+                          {source.visibility === 'published'
                             ? 'Zurückziehen (nicht mehr sichtbar für die Klasse)'
                             : 'Für die Klasse veröffentlichen'}
-                        </button>
+                        </Button>
 
                         {source.avgAccuracy !== null && (
                           <p className="text-sm text-primary font-semibold mb-3">
@@ -542,12 +546,14 @@ export default function LehrerKlassePage() {
                         )}
                       </>
                     )}
-                  </div>
+                  </Card>
                 ))}
               </div>
             )}
           </>
         )}
+
+        <Footer />
       </div>
     </div>
   );
