@@ -536,4 +536,9 @@ router.post('/classes/:id/sources/:sourceId/unpublish', teacherAuthCheck, async 
   }
 });
 
+// ✅ Nachtrag (Vollaudit Plan Punkt 18, echte Tests statt Attrappen): siehe
+// gleiche Begründung in routes/processing.js - reine Funktion zusätzlich als
+// Property angehängt, damit sie ohne Server/DB testbar ist.
+router.computeClassWeakTopics = computeClassWeakTopics;
+
 module.exports = router;

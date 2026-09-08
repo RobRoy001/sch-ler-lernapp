@@ -98,11 +98,22 @@ export default function DatenschutzPage() {
               von Railway und Vercel für dieses Projekt bestätigen und hier ergänzen.]
             </p>
             <p>
-              Für die automatische Erstellung von Testfragen aus hochgeladenen Inhalten ist eine
-              Anbindung an OpenAI vorgesehen. Diese ist aktuell noch NICHT aktiv – Testfragen
-              werden derzeit aus festen Beispieldaten erzeugt, hochgeladene Inhalte werden dafür
-              nicht an OpenAI oder einen anderen externen KI-Anbieter übertragen. Dieser Abschnitt
-              wird aktualisiert, sobald die echte KI-Anbindung live geht.
+              Für die automatische Erstellung von Testfragen und Vertiefungs-Erklärungen aus
+              hochgeladenen Inhalten nutzen wir eine Anbindung an OpenAI (Anbieter: OpenAI
+              Ireland Ltd.). Der Inhalt, den du hochlädst bzw. auswählst, wird dafür an OpenAI
+              übermittelt und dort verarbeitet, um daraus Fragen und Erklärungen zu erzeugen.
+              Vor dieser Verarbeitung holen wir für den jeweiligen Upload deine ausdrückliche
+              Zustimmung ein; ohne Zustimmung wird stattdessen ein klar als Beispiel
+              gekennzeichneter Mock-Test angezeigt, ohne dass dein Inhalt übermittelt wird.
+              [PRÜFEN: Auftragsverarbeitungsvertrag mit OpenAI abschließen/bestätigen und hier
+              referenzieren.]
+            </p>
+            <p>
+              Zahlungen (Pro-Abo, Klassen-Abo, Vertiefungsmodus) wickeln wir über den
+              Zahlungsdienstleister Stripe ab. Dabei verarbeitet Stripe die zur Zahlung
+              notwendigen Daten (z. B. Zahlungsmittel, Rechnungsadresse) – wir selbst sehen
+              und speichern keine vollständigen Kartendaten. Es gilt zusätzlich die
+              Datenschutzerklärung von Stripe.
             </p>
           </Section>
 
@@ -139,9 +150,10 @@ export default function DatenschutzPage() {
           <Section title="7. Cookies und lokale Speicherung">
             <p>
               Kapiert? verwendet nach aktuellem Stand keine Marketing- oder Analyse-Cookies. Zur
-              Anmeldung wird ein Sitzungs-Token technisch notwendig im lokalen Speicher deines
-              Browsers (localStorage) abgelegt; dieser verlässt dein Gerät nicht und wird beim
-              Abmelden gelöscht.
+              Anmeldung wird ein technisch notwendiges Sitzungs-Cookie gesetzt (sogenanntes
+              httpOnly-Cookie, für JavaScript nicht auslesbar). Es verlässt dein Gerät nicht,
+              ist ausschließlich zur Aufrechterhaltung deiner Anmeldung nötig und wird beim
+              Abmelden bzw. nach Ablauf gelöscht.
             </p>
           </Section>
 
@@ -158,12 +170,14 @@ export default function DatenschutzPage() {
               Wir aktualisieren diese Datenschutzerklärung bei Bedarf. Deine Nutzung der LernApp nach
               einer Änderung gilt als Zustimmung zur überarbeiteten Version.
             </p>
-            <p><strong>Letzte Aktualisierung:</strong> 2. September 2026</p>
+            <p><strong>Letzte Aktualisierung:</strong> 8. September 2026</p>
           </Section>
         </div>
 
         <p className="text-gray-400 text-xs mt-6 text-center">
           Siehe auch: <Link to="/impressum" className="underline hover:text-gray-600">Impressum</Link>
+          {' · '}
+          <Link to="/agb" className="underline hover:text-gray-600">AGB</Link>
         </p>
       </div>
     </div>

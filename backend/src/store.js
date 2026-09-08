@@ -1,7 +1,10 @@
 // Database abstraction layer (Postgres/Supabase)
 //
 // Angepasst an das ECHTE, tatsächlich verwendete DB-Schema (geprüft über
-// information_schema.columns via /api/debug-schema):
+// information_schema.columns via /api/debug-schema). ✅ Nachtrag (Vollaudit
+// Plan Punkt 19): users/sources/test_submissions stehen jetzt zusätzlich als
+// CREATE TABLE IF NOT EXISTS in database/migrations.js - dieser Kommentar
+// hier bleibt trotzdem die kompakte Referenz beim Lesen von store.js.
 //   users: id (integer), email, password_hash, name, grade_level (varchar),
 //          date_of_birth, parent_email, age_verified, parent_consent_token,
 //          parent_consent_expires, parent_consent_at, account_status, created_at
@@ -41,13 +44,17 @@ async function createUser({
   parentConsentExpires,
   accountStatus
 }) {
+  // ✅ Nachtrag (Onboarding-Flow 2026-09-08): onboarding_completed wird hier
+  // bewusst explizit auf false gesetzt (Spalten-Default ist true, siehe
+  // migrations.js) - nur frisch über die Registrierung angelegte Konten
+  // sollen den neuen Onboarding-Flow beim ersten Login sehen.
   const result = await query(
     `INSERT INTO users (
        email, password_hash, name, grade_level, date_of_birth,
        parent_email, age_verified, parent_consent_token,
-       parent_consent_expires, account_status, created_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-     RETURNING id, email, name, grade_level, account_status, age_verified`,
+       parent_consent_expires, account_status, onboarding_completed, created_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false, NOW())
+     RETURNING id, email, name, grade_level, account_status, age_verified, onboarding_completed`,
     [
       email,
       password,
@@ -71,7 +78,7 @@ async function findUserByEmail(email) {
 
 async function findUserById(userId) {
   const result = await query(
-    'SELECT id, email, name, grade_level, account_status, age_verified FROM users WHERE id = $1',
+    'SELECT id, email, name, grade_level, account_status, age_verified, onboarding_completed FROM users WHERE id = $1',
     [userId]
   );
   return result.rows[0];
@@ -97,7 +104,8 @@ async function updateUser(userId, updates) {
     ageVerified: 'age_verified',
     parentConsentToken: 'parent_consent_token',
     parentConsentExpires: 'parent_consent_expires',
-    parentConsentAt: 'parent_consent_at'
+    parentConsentAt: 'parent_consent_at',
+    onboardingCompleted: 'onboarding_completed'
   };
 
   const fields = [];

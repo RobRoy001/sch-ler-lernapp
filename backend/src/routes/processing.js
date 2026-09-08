@@ -459,4 +459,12 @@ router.get('/submissions/:submissionId', authCheck, asyncHandler(async (req, res
   }
 }));
 
+// ✅ Nachtrag (Vollaudit Plan Punkt 18, echte Tests statt Attrappen): reine
+// Funktionen zusätzlich als Property auf dem Router-Export angehängt, damit
+// backend/tests/routes/processing.weakTopics.test.js sie direkt testen kann,
+// ohne einen echten Server/DB-Zugriff zu brauchen. Ändert am bisherigen
+// `require('./routes/processing')`-Verhalten in server.js nichts - der
+// Router selbst bleibt weiterhin der Default-Export.
+router.computeWeakTopics = computeWeakTopics;
+
 module.exports = router;

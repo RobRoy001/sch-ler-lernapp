@@ -14,6 +14,78 @@
 const { query } = require('./connection');
 
 async function runMigrations() {
+  // ---- Legacy-Kern-Tabellen (users, sources, test_submissions) ----
+  //
+  // ✅ Nachtrag (Vollaudit Plan Punkt 19): diese drei Tabellen sind die
+  // eigentlich ältesten im Projekt, standen aber bisher NIRGENDS im Code -
+  // nur als Kommentar am Anfang von store.js und in den Audit-Dokumenten.
+  // Genau das war beim Datenbank-Vorfall vom 2026-09-06 (siehe
+  // claude/LernApp-Vollaudit-2026-09-03.md) der einzige Grund, warum der
+  // Wiederaufbau nicht einfach "App neu deployen, Migrationen laufen
+  // lassen" war, sondern manuelles SQL nötig machte: jede andere Tabelle
+  // hier entsteht automatisch, diese drei nicht. CREATE TABLE IF NOT EXISTS
+  // ändert an der laufenden Produktion nichts (die Tabellen existieren dort
+  // längst), macht aber jeden künftigen Wiederaufbau (neue Datenbank, neue
+  // Umgebung) narrensicher. Spalten/Typen 1:1 aus dem tatsächlich
+  // verwendeten Schema übernommen (siehe store.js-Kommentar + die
+  // INSERT/SELECT-Statements dort, gegengeprüft über
+  // information_schema.columns).
+  await query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      grade_level VARCHAR(20),
+      date_of_birth DATE,
+      parent_email VARCHAR(255),
+      age_verified BOOLEAN NOT NULL DEFAULT true,
+      parent_consent_token VARCHAR(255),
+      parent_consent_expires TIMESTAMP,
+      parent_consent_at TIMESTAMP,
+      account_status VARCHAR(50) NOT NULL DEFAULT 'active',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // "test" hält das komplette generierte Test-JSON (Fragen inkl. topic-Tag
+  // usw., siehe questionGenerator.js) - JSONB statt einzelner Spalten, weil
+  // sich die Fragenstruktur je nach Testformat unterscheidet (siehe
+  // testFormats.js: multiple_choice/fill_gap/vocabulary/mixed).
+  await query(`
+    CREATE TABLE IF NOT EXISTS sources (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      content_type VARCHAR(50),
+      reference_id INTEGER,
+      reference_book_id INTEGER,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      progress INTEGER NOT NULL DEFAULT 0,
+      test JSONB,
+      title VARCHAR(255),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // "test_id" verweist trotz des Namens auf sources.id (der Mock-/Echt-Test
+  // lebt als JSON auf der Source, siehe processing.js) - deshalb hier direkt
+  // als Fremdschlüssel auf sources statt nur als lose Zahl.
+  await query(`
+    CREATE TABLE IF NOT EXISTS test_submissions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      test_id INTEGER REFERENCES sources(id) ON DELETE CASCADE,
+      correct_count INTEGER NOT NULL DEFAULT 0,
+      total_questions INTEGER NOT NULL DEFAULT 0,
+      accuracy NUMERIC(5,2),
+      answers_json JSONB,
+      time_taken INTEGER,
+      submitted_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  console.log('✅ Legacy-Kern-Tabellen geprüft/angelegt (users, sources, test_submissions).');
+
   await query(`
     CREATE TABLE IF NOT EXISTS parents (
       id SERIAL PRIMARY KEY,
@@ -170,6 +242,17 @@ async function runMigrations() {
   // applySubscriptionToUser() und frontend SettingsPage.jsx.
   await query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_cancel_at_period_end BOOLEAN NOT NULL DEFAULT false
+  `);
+  // ✅ Nachtrag (Vollaudit UI/UX-Mockup-Dokument, Onboarding-Flow 2026-09-08):
+  // DEFAULT true, damit bestehende Konten (inkl. der drei Test-Logins) den
+  // neuen Onboarding-Flow nicht plötzlich beim nächsten Login sehen - nur
+  // /api/auth/register setzt den Wert für neu angelegte Konten explizit auf
+  // false (siehe store.js createUser). Kein separates Consent-Opt-in-System
+  // für die KI-Nutzung dahinter (das würde die gesamte Verarbeitungs-Pipeline
+  // betreffen, siehe routes/processing.js) - der Consent-Screen im Flow
+  // verlinkt bewusst nur auf die bestehende Datenschutzerklärung.
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT true
   `);
 
   // Eigene Tabelle statt Wiederverwendung von "sources": ein Kauf ist kein

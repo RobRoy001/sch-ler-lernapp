@@ -5,6 +5,7 @@ import RegisterPage from './pages/RegisterPage';
 import ParentConsentPage from './pages/ParentConsentPage';
 import ImpressumPage from './pages/ImpressumPage';
 import DatenschutzPage from './pages/DatenschutzPage';
+import AgbPage from './pages/AgbPage';
 import DashboardPage from './pages/DashboardPage';
 import UploadPage from './pages/UploadPage';
 import ProcessingPage from './pages/ProcessingPage';
@@ -20,6 +21,9 @@ import LehrerKlassenPage from './pages/lehrer/LehrerKlassenPage';
 import LehrerKlassePage from './pages/lehrer/LehrerKlassePage';
 import KlassePage from './pages/klasse/KlassePage';
 import KlassenAboPage from './pages/klasse/KlassenAboPage';
+import OnboardingPage from './pages/OnboardingPage';
+import HealthyBreakModal from './components/HealthyBreakModal';
+import { useHealthyBreak } from './utils/useHealthyBreak';
 import Logo from './components/Logo';
 import { API_BASE_URL } from './config/api';
 
@@ -27,6 +31,12 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
+
+  // ✅ Healthy-Break-Warnung (2026-09-08): läuft nur, solange eingeloggt UND
+  // der Onboarding-Flow schon abgeschlossen ist - sonst würde der Timer
+  // schon auf dem Login-Screen oder mitten im Onboarding mitzählen.
+  const healthyBreakEnabled = isAuthenticated && user?.onboarding_completed !== false;
+  const healthyBreak = useHealthyBreak(healthyBreakEnabled);
 
   // ✅ Fix (2026-09-03): Session-Check nutzt jetzt konsequent das
   // httpOnly-Cookie statt eines localStorage-Tokens. Seit der Umstellung
@@ -66,6 +76,21 @@ function App() {
   const handleLoginSuccess = (userData) => {
     setUser(userData);
     setIsAuthenticated(true);
+  };
+
+  // ✅ Onboarding-Flow (2026-09-08): OnboardingPage.jsx ruft das nach dem
+  // letzten Schritt (oder "Überspringen") auf - aktualisiert den lokalen
+  // User-State, damit die Weiche unten sofort auf die normalen Routen
+  // umschaltet, ohne auf den nächsten Session-Check warten zu müssen.
+  const handleOnboardingComplete = () => {
+    setUser((prev) => (prev ? { ...prev, onboarding_completed: true } : prev));
+  };
+
+  // ✅ Profil bearbeiten (2026-09-08): SettingsPage.jsx ruft das nach einem
+  // erfolgreichen PATCH /auth/profile auf, damit z.B. ein geänderter Name
+  // sofort überall in der App sichtbar ist (nicht erst nach Reload).
+  const handleUserUpdate = (patch) => {
+    setUser((prev) => (prev ? { ...prev, ...patch } : prev));
   };
 
   const handleLogout = async () => {
@@ -128,8 +153,18 @@ function App() {
                 § 5 DDG / Art. 13-14 DSGVO). */}
             <Route path="/impressum" element={<ImpressumPage />} />
             <Route path="/datenschutz" element={<DatenschutzPage />} />
+            <Route path="/agb" element={<AgbPage />} />
             <Route path="*" element={<Navigate to="/" />} />
           </>
+        ) : user && user.onboarding_completed === false ? (
+          // ✅ Onboarding-Flow (2026-09-08): fängt JEDE Route ab, solange das
+          // Konto den Flow noch nicht abgeschlossen hat (server.js setzt das
+          // Flag bei der Registrierung auf false) - verhindert, dass ein
+          // direkt aufgerufener Link (z.B. /upload) den Flow umgeht.
+          <Route
+            path="*"
+            element={<OnboardingPage user={user} onComplete={handleOnboardingComplete} />}
+          />
         ) : (
           <>
             <Route path="/" element={<DashboardPage user={user} onLogout={handleLogout} />} />
@@ -138,7 +173,10 @@ function App() {
             <Route path="/processing/:sourceId" element={<ProcessingPage />} />
             <Route path="/test/:sourceId" element={<TestPlayer />} />
             <Route path="/results/:submissionId" element={<ResultsPage />} />
-            <Route path="/settings" element={<SettingsPage user={user} onLogout={handleLogout} />} />
+            <Route
+              path="/settings"
+              element={<SettingsPage user={user} onLogout={handleLogout} onUserUpdate={handleUserUpdate} />}
+            />
             {/* Lehrer-Portal (2026-09-03): eine per Klassencode beigetretene
                 Klasse gehört zum KIND-Konto (eigene, vom Lehrer-/Eltern-
                 Cookie unabhängige Session) - deshalb nur im authentifizierten
@@ -157,10 +195,19 @@ function App() {
             <Route path="/lehrer/klassen/:id" element={<LehrerKlassePage />} />
             <Route path="/impressum" element={<ImpressumPage />} />
             <Route path="/datenschutz" element={<DatenschutzPage />} />
+            <Route path="/agb" element={<AgbPage />} />
             <Route path="*" element={<Navigate to="/" />} />
           </>
         )}
       </Routes>
+      {healthyBreakEnabled && healthyBreak.visible && (
+        <HealthyBreakModal
+          stats={healthyBreak.stats}
+          onTakeBreak={healthyBreak.takeBreak}
+          onKeepGoing={healthyBreak.keepGoing}
+          onRemindLater={healthyBreak.remindLater}
+        />
+      )}
     </Router>
   );
 }

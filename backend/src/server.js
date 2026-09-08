@@ -60,7 +60,10 @@ const publicUser = (user) => ({
   id: user.id,
   email: user.email,
   name: user.name,
-  grade_level: user.grade_level
+  grade_level: user.grade_level,
+  // ✅ Nachtrag (Onboarding-Flow 2026-09-08): App.jsx entscheidet damit nach
+  // Login/Registrierung, ob /onboarding statt des Dashboards gezeigt wird.
+  onboarding_completed: user.onboarding_completed !== undefined ? user.onboarding_completed : true
 });
 
 app.set('trust proxy', 1);
@@ -418,6 +421,62 @@ app.get('/api/auth/profile', authCheck, async (req, res) => {
     return res.status(404).json({ error: 'Nutzer nicht gefunden' });
   }
   return res.json(publicUser(user));
+});
+
+// ✅ Profil bearbeiten (2026-09-08, UI/UX-Mockup-Dokument "Settings"-Screen:
+// "Profil ... + Edit-Button" - vorher konnte Name/Klassenstufe nach der
+// Registrierung nie mehr geändert werden). Bewusst NUR name/grade_level -
+// email bleibt unveränderbar (das ist zugleich die Login-Identität, eine
+// Änderung bräuchte Eindeutigkeits-/Bestätigungs-Logik, eigenes Thema).
+const ALLOWED_GRADE_LEVELS = ['5', '6', '7', '8', '9', '10', '11', '12', '13'];
+app.patch('/api/auth/profile', authCheck, async (req, res) => {
+  try {
+    const { name, grade_level } = req.body;
+
+    if (name !== undefined && !String(name).trim()) {
+      return res.status(400).json({ error: 'Name darf nicht leer sein' });
+    }
+    if (
+      grade_level !== undefined &&
+      grade_level !== null &&
+      grade_level !== '' &&
+      !ALLOWED_GRADE_LEVELS.includes(String(grade_level))
+    ) {
+      return res.status(400).json({ error: 'Ungültige Klassenstufe' });
+    }
+
+    const updates = {};
+    if (name !== undefined) updates.name = String(name).trim();
+    if (grade_level !== undefined) updates.grade_level = grade_level || null;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'Keine Änderungen übergeben' });
+    }
+
+    const updated = await updateUser(req.user.id, updates);
+    if (!updated) {
+      return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+    }
+    return res.json(publicUser(updated));
+  } catch (error) {
+    console.error('Profile-Update Error:', error);
+    return res.status(500).json({ error: 'Profil konnte nicht aktualisiert werden' });
+  }
+});
+
+// ✅ Onboarding-Flow (2026-09-08, UI/UX-Mockup-Dokument): wird vom Frontend
+// nach dem letzten Schritt (Erfolg-Screen) aufgerufen, damit der Flow beim
+// nächsten Login nicht erneut erscheint. Bewusst ein eigener, einfacher
+// Endpunkt statt eines generischen "PUT /profile" - die einzige erlaubte
+// Änderung hier ist genau dieses eine Flag.
+app.post('/api/auth/complete-onboarding', authCheck, async (req, res) => {
+  try {
+    await updateUser(req.user.id, { onboardingCompleted: true });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Complete-Onboarding Error:', error);
+    return res.status(500).json({ error: 'Onboarding-Status konnte nicht gespeichert werden' });
+  }
 });
 
 // ✅ Logout Endpoint

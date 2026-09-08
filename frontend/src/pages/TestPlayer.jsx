@@ -5,6 +5,7 @@ import Logo from '../components/Logo';
 import DeepeningPanel from '../components/DeepeningPanel';
 import AnswerReview from '../components/AnswerReview';
 import { API_BASE_URL } from '../config/api';
+import { recordTestCompletion } from '../utils/learningSession';
 
 // Hinweis: im aktuellen Backend (processing.js, Mock-Testgenerierung)
 // entspricht die Test-Id der Source-Id - ein Test wird also über
@@ -124,6 +125,12 @@ export default function TestPlayer({ user }) {
       if (!response.ok) {
         throw new Error(data.error || 'Test konnte nicht eingereicht werden');
       }
+
+      // ✅ Healthy-Break-Warnung (2026-09-08): rein clientseitiger Zähler für
+      // die Sitzungs-Statistik im Modal (siehe utils/learningSession.js) -
+      // keine neue Server-Anfrage, nutzt nur das ohnehin schon vorliegende
+      // Submit-Ergebnis.
+      recordTestCompletion(data.submission.accuracy);
 
       setResults({
         submissionId: data.submission.submissionId,

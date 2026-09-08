@@ -5,6 +5,7 @@ import Logo from '../../components/Logo';
 import AnswerReview from '../../components/AnswerReview';
 import DeepeningPanel from '../../components/DeepeningPanel';
 import { API_BASE_URL } from '../../config/api';
+import { recordTestCompletion } from '../../utils/learningSession';
 
 // Schüler-Ansicht einer Klasse (Lehrer-Portal Phase 1): Liste der
 // Klassenarbeiten dieser Klasse, mit Möglichkeit, eine offene Klassenarbeit
@@ -248,6 +249,10 @@ export default function KlassePage() {
       );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Test konnte nicht eingereicht werden');
+
+      // ✅ Healthy-Break-Warnung (2026-09-08): gleicher Zähler wie im
+      // individuellen Pfad (TestPlayer.jsx) - siehe dortiger Kommentar.
+      recordTestCompletion(data.submission.accuracy);
 
       setResult(data.submission);
       await loadData();

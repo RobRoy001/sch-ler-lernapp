@@ -285,11 +285,19 @@ function buildDeepeningPrompt(topic, wrongQuestions) {
     .join('\n');
 
   return [
-    'Du bist ein geduldiger KI-Nachhilfelehrer für Schüler:innen auf Deutsch.',
+    'Du bist ein geduldiger, warmherziger KI-Nachhilfelehrer für Schüler:innen auf Deutsch.',
     `Eine Schülerin/ein Schüler hat beim Thema "${topic}" folgende Fragen falsch beantwortet:`,
     examples,
-    'Erkläre das zugrunde liegende Konzept verständlich und Schritt für Schritt, gerne mit einer einfachen Analogie, so dass die Wissenslücke geschlossen wird, die zu genau diesen Fehlern geführt hat. Sprich die Schülerin/den Schüler direkt an ("Du").',
-    'Erstelle danach 3 bis 5 NEUE Multiple-Choice-Übungsfragen (genau 4 Optionen je Frage) ausschließlich zu diesem Thema, mit anderer Formulierung als die Originalfragen, damit sie als Erfolgskontrolle taugen.'
+    // ✅ Nachtrag (Vollaudit Plan Punkt 14, Feinschliff): Ton war zuvor rein
+    // sachlich ("Erkläre das Konzept..."), ohne jede Einordnung der Fehler.
+    // Robert-Feedback nach dem Live-Test: soll wärmer/ermutigender klingen,
+    // bewusst zuerst auf "später" verschoben, jetzt nachgeholt. Wichtig:
+    // NICHT ins Übertrieben-Positive kippen (falsche Antworten mit "Super
+    // gemacht!" zu loben wirkt bei Jugendlichen unglaubwürdig/herablassend) -
+    // deshalb die explizite Gegenanweisung unten.
+    'Ton: freundlich, ermutigend und auf Augenhöhe - nicht belehrend, nicht trocken-sachlich. Fehler sind ein normaler Teil des Lernens, kein Grund zur Sorge. Beginne NICHT direkt mit einer nüchternen Fehleranalyse, sondern mit ein bis zwei kurzen, ehrlich gemeinten einordnenden Sätzen (z.B. "Das ist ein Thema, bei dem viele erstmal stolpern - schauen wir es uns in Ruhe an."). Vermeide übertriebenes Lob für falsche Antworten (kein "Super gemacht!" o.ä.) - das wirkt unglaubwürdig. Sprich die Schülerin/den Schüler direkt an ("Du").',
+    'Erkläre danach das zugrunde liegende Konzept verständlich und Schritt für Schritt, gerne mit einer einfachen Analogie, so dass die Wissenslücke geschlossen wird, die zu genau diesen Fehlern geführt hat.',
+    'Erstelle danach 3 bis 5 NEUE Multiple-Choice-Übungsfragen (genau 4 Optionen je Frage) ausschließlich zu diesem Thema, mit anderer Formulierung als die Originalfragen, damit sie als Erfolgskontrolle taugen. Halte auch die Erklärungen zu den Übungsfragen kurz, klar und wertschätzend im Ton - keine Standardfloskeln, keine erneute Kritik am ursprünglichen Fehler.'
   ].join('\n\n');
 }
 

@@ -105,6 +105,8 @@ export default function ImpressumPage() {
 
         <p className="text-gray-400 text-xs mt-6 text-center">
           Siehe auch: <Link to="/datenschutz" className="underline hover:text-gray-600">Datenschutzerklärung</Link>
+          {' · '}
+          <Link to="/agb" className="underline hover:text-gray-600">AGB</Link>
         </p>
       </div>
     </div>

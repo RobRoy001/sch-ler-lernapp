@@ -1,12 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, LogOut, User, Download, Trash2, AlertTriangle, Users, X, GraduationCap, ChevronRight, Crown, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, LogOut, User, Download, Trash2, AlertTriangle, Users, X, GraduationCap, ChevronRight, Crown, CheckCircle2, Pencil } from 'lucide-react';
 import Logo from '../components/Logo';
 import { API_BASE_URL } from '../config/api';
 
-export default function SettingsPage({ user, onLogout }) {
+// ✅ Nachtrag (2026-09-08, UI/UX-Mockup-Dokument "Settings"-Screen): zeigt
+// die tatsächlich laufende Backend-Version an (siehe server.js
+// GET /api/health "version: '1.0.0'") - beide Stellen von Hand synchron
+// halten, es gibt aktuell keine gemeinsame Quelle (z.B. package.json) dafür.
+const APP_VERSION = '1.0.0';
+
+export default function SettingsPage({ user, onLogout, onUserUpdate }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // ✅ Profil bearbeiten (2026-09-08, UI/UX-Mockup-Dokument "Settings"-
+  // Screen: "Profil ... + Edit-Button"): bisher rein lesende Anzeige. Nur
+  // Name/Klassenstufe editierbar - Email bleibt bewusst fest (Login-
+  // Identität, siehe Kommentar am Backend-Endpunkt PATCH /auth/profile).
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileName, setProfileName] = useState(user?.name || '');
+  const [profileGrade, setProfileGrade] = useState(user?.grade_level || '');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState('');
 
   // ✅ Stripe-Billing (2026-09-06): "Kapiert Pro"-Status + Upgrade-Button.
   // Nutzt die in backend/src/routes/billing.js gebauten Endpunkte. Der
@@ -209,6 +225,40 @@ export default function SettingsPage({ user, onLogout }) {
     navigate('/');
   };
 
+  const handleStartEditProfile = () => {
+    setProfileName(user?.name || '');
+    setProfileGrade(user?.grade_level || '');
+    setProfileError('');
+    setEditingProfile(true);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!profileName.trim()) {
+      setProfileError('Name darf nicht leer sein');
+      return;
+    }
+
+    setProfileSaving(true);
+    setProfileError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: profileName.trim(), grade_level: profileGrade || null })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Profil konnte nicht gespeichert werden');
+
+      if (onUserUpdate) onUserUpdate(data);
+      setEditingProfile(false);
+    } catch (err) {
+      setProfileError(err.message);
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
   // ✅ Fix (2026-09-03): nutzt jetzt wie der Rest der App das httpOnly-
   // Cookie ("credentials: 'include'") statt eines localStorage-Tokens, den
   // seit der Umstellung auf Cookies (Sicherheitsaudit Mittel #16) niemand
@@ -370,19 +420,82 @@ export default function SettingsPage({ user, onLogout }) {
         </div>
 
         <div className="bg-cream border border-gray-100 rounded-lg p-6 shadow-sm mb-6">
-          <h2 className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-4">Profil</h2>
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-primary-light flex items-center justify-center text-primary flex-shrink-0">
-              <User size={26} />
-            </div>
-            <div>
-              <p className="text-gray-900 font-semibold">{user?.name || '—'}</p>
-              <p className="text-gray-500 text-sm">{user?.email || '—'}</p>
-              {user?.grade_level && (
-                <p className="text-gray-400 text-xs mt-0.5">Klasse {user.grade_level}</p>
-              )}
-            </div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-bold uppercase tracking-wide text-gray-400">Profil</h2>
+            {!editingProfile && (
+              <button
+                onClick={handleStartEditProfile}
+                className="flex items-center gap-1.5 text-primary hover:text-primary-dark text-xs font-semibold"
+              >
+                <Pencil size={13} /> Bearbeiten
+              </button>
+            )}
           </div>
+
+          {!editingProfile ? (
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-full bg-primary-light flex items-center justify-center text-primary flex-shrink-0">
+                <User size={26} />
+              </div>
+              <div>
+                <p className="text-gray-900 font-semibold">{user?.name || '—'}</p>
+                <p className="text-gray-500 text-sm">{user?.email || '—'}</p>
+                {user?.grade_level && (
+                  <p className="text-gray-400 text-xs mt-0.5">Klasse {user.grade_level}</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-500 text-xs font-medium mb-1">Name</label>
+                <input
+                  type="text"
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  className="w-full h-11 px-4 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-500 text-xs font-medium mb-1">Klassenstufe</label>
+                <select
+                  value={profileGrade}
+                  onChange={(e) => setProfileGrade(e.target.value)}
+                  className="w-full h-11 px-4 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                >
+                  <option value="">Keine Angabe</option>
+                  {[5, 6, 7, 8, 9, 10, 11, 12, 13].map((g) => (
+                    <option key={g} value={g}>Klasse {g}</option>
+                  ))}
+                </select>
+              </div>
+              {/* Email bewusst nicht editierbar - siehe Kommentar am Backend-
+                  Endpunkt PATCH /auth/profile (Login-Identität). */}
+              <p className="text-gray-400 text-xs">{user?.email}</p>
+
+              {profileError && <p className="text-error-dark text-sm">{profileError}</p>}
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={handleSaveProfile}
+                  disabled={profileSaving}
+                  className="bg-primary hover:bg-primary-dark text-white px-5 py-2 rounded-md font-semibold text-sm transition disabled:opacity-60"
+                >
+                  {profileSaving ? 'Wird gespeichert…' : 'Speichern'}
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingProfile(false);
+                    setProfileError('');
+                  }}
+                  disabled={profileSaving}
+                  className="bg-white border border-gray-200 text-gray-700 px-5 py-2 rounded-md font-semibold text-sm transition"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-cream border border-gray-100 rounded-lg p-6 shadow-sm mb-6">
@@ -570,6 +683,8 @@ export default function SettingsPage({ user, onLogout }) {
             </div>
           )}
         </div>
+
+        <p className="text-center text-gray-300 text-xs mt-6">Kapiert? · Version {APP_VERSION}</p>
       </div>
     </div>
   );
