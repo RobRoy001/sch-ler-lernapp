@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, Clock, AlertTriangle, X, Users } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Users } from 'lucide-react';
 import Logo from '../../components/Logo';
 import AnswerReview from '../../components/AnswerReview';
 import DeepeningPanel from '../../components/DeepeningPanel';
+import Button from '../../components/Button';
+import Card from '../../components/Card';
+import Alert from '../../components/Alert';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import Footer from '../../components/Footer';
 import { API_BASE_URL } from '../../config/api';
-import { recordTestCompletion } from '../../utils/learningSession';
 
 // Schüler-Ansicht einer Klasse (Lehrer-Portal Phase 1): Liste der
 // Klassenarbeiten dieser Klasse, mit Möglichkeit, eine offene Klassenarbeit
@@ -22,6 +26,12 @@ import { recordTestCompletion } from '../../utils/learningSession';
 // Pfad. "Nochmal ansehen" lädt dafür nicht mehr den leeren Test neu, sondern
 // das bereits gespeicherte Ergebnis über GET .../sources/:sourceId/result
 // (siehe backend/src/routes/classes.js).
+//
+// ✅ Design-Refactor (2026-09-07): siehe LehrerKlassePage.jsx - gleiche
+// gemeinsame Komponenten, gleiche Begründung. Der rotierende Clock-Spinner
+// beim Laden eines einzelnen Tests wurde dabei bewusst auf denselben
+// Loader2-Spinner wie überall sonst vereinheitlicht (LoadingSpinner
+// fullScreen={false}) statt weiter ein eigenes Icon zu benutzen.
 export default function KlassePage() {
   const { classId } = useParams();
   const navigate = useNavigate();
@@ -43,6 +53,7 @@ export default function KlassePage() {
 
   const billingBanner = searchParams.get('billing');
   const autoGenerateTopic = billingBanner === 'success' ? searchParams.get('topic') : null;
+
   // ✅ Klassen-Abo (2026-09-07): Rücksprung von Stripe landet (anders als
   // beim Vertiefungsmodus-Einzelkauf) direkt hier auf der Listen-Ansicht,
   // nicht bei einer bestimmten Klassenarbeit - eigenes Flag statt
@@ -95,6 +106,7 @@ export default function KlassePage() {
 
   useEffect(() => {
     if (!cameFromSuccessfulCheckout || !initialBillingSourceId) return undefined;
+
     let cancelled = false;
     let attempts = 0;
     const maxAttempts = 8; // 8 x 4s = 32s, deckt die beobachtete Verzögerung ab
@@ -151,6 +163,7 @@ export default function KlassePage() {
     setResult(null);
     setTestLoading(true);
     setActiveSourceId(sourceId);
+
     try {
       const response = await fetch(`${API_BASE_URL}/classes/${classId}/sources/${sourceId}`, {
         credentials: 'include'
@@ -190,6 +203,7 @@ export default function KlassePage() {
     setTestLoading(true);
     setActiveSourceId(sourceId);
     setActiveTest(null);
+
     try {
       await loadResult(sourceId);
     } finally {
@@ -229,6 +243,7 @@ export default function KlassePage() {
     e.preventDefault();
     setTestError('');
     setSubmitting(true);
+
     try {
       const payload = (activeTest.questions || []).map((q) => ({
         question_id: q.id,
@@ -247,12 +262,9 @@ export default function KlassePage() {
           body: JSON.stringify({ answers: payload })
         }
       );
+
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Test konnte nicht eingereicht werden');
-
-      // ✅ Healthy-Break-Warnung (2026-09-08): gleicher Zähler wie im
-      // individuellen Pfad (TestPlayer.jsx) - siehe dortiger Kommentar.
-      recordTestCompletion(data.submission.accuracy);
 
       setResult(data.submission);
       await loadData();
@@ -264,11 +276,7 @@ export default function KlassePage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-canvas flex items-center justify-center">
-        <p className="text-gray-500 font-body">Wird geladen…</p>
-      </div>
-    );
+    return <LoadingSpinner />;
   }
 
   // Inline-Quiz aktiv oder Ergebnis-Ansicht
@@ -284,41 +292,29 @@ export default function KlassePage() {
           </button>
 
           {result && billingBanner === 'success' && (
-            <div className="flex items-start justify-between gap-3 bg-success-light border border-success/30 rounded-lg p-4 mb-6">
-              <p className="text-success-dark text-sm">
-                Zahlung erfolgreich! Deine Vertiefung wird jetzt erstellt.
-              </p>
-              <button onClick={dismissBillingBanner} className="text-success-dark/60 hover:text-success-dark flex-shrink-0">
-                <X size={16} />
-              </button>
-            </div>
+            <Alert tone="success" onDismiss={dismissBillingBanner}>
+              Zahlung erfolgreich! Deine Vertiefung wird jetzt erstellt.
+            </Alert>
           )}
+
           {result && billingBanner === 'cancel' && (
-            <div className="flex items-start justify-between gap-3 bg-gray-100 border border-gray-200 rounded-lg p-4 mb-6">
-              <p className="text-gray-600 text-sm">Der Bezahlvorgang wurde abgebrochen, es wurde nichts abgebucht.</p>
-              <button onClick={dismissBillingBanner} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
-                <X size={16} />
-              </button>
-            </div>
+            <Alert tone="neutral" onDismiss={dismissBillingBanner}>
+              Der Bezahlvorgang wurde abgebrochen, es wurde nichts abgebucht.
+            </Alert>
           )}
 
           {testLoading ? (
-            <div className="text-center py-12 text-gray-500">
-              <Clock size={32} className="mx-auto mb-2 animate-spin" />
-              <p>Wird geladen…</p>
-            </div>
+            <LoadingSpinner fullScreen={false} />
           ) : testError && !activeTest && !result ? (
-            <div className="flex items-start gap-3 p-4 bg-error-light border border-error/20 rounded-lg">
-              <AlertTriangle size={18} className="text-error-dark flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-error-dark">{testError}</p>
-            </div>
+            <Alert tone="error">{testError}</Alert>
           ) : result ? (
             <>
-              <div className="bg-white border border-gray-100 rounded-lg p-8 shadow-sm text-center">
+              <Card padding="p-8" className="text-center">
                 <CheckCircle size={56} className="mx-auto text-success mb-4" />
                 <h2 className="font-display text-2xl font-bold text-gray-900 mb-4">
                   {activeTest?.title || result.title || 'Klassenarbeit'}
                 </h2>
+
                 <div className="grid grid-cols-3 gap-4 mb-2">
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">
@@ -345,7 +341,7 @@ export default function KlassePage() {
                     </p>
                   </div>
                 </div>
-              </div>
+              </Card>
 
               <AnswerReview questions={result.answers} />
 
@@ -360,12 +356,9 @@ export default function KlassePage() {
                 onAutoGenerateHandled={dismissBillingBanner}
               />
 
-              <button
-                onClick={handleCancelTest}
-                className="w-full mt-6 bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md font-semibold transition"
-              >
+              <Button variant="primary" size="lg" fullWidth onClick={handleCancelTest} className="mt-6">
                 Zurück zur Klasse
-              </button>
+              </Button>
             </>
           ) : (
             activeTest && (
@@ -377,19 +370,11 @@ export default function KlassePage() {
                   </h1>
                 </div>
 
-                {testError && (
-                  <div className="flex items-start gap-3 p-4 bg-error-light border border-error/20 rounded-lg mb-6">
-                    <AlertTriangle size={18} className="text-error-dark flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-error-dark">{testError}</p>
-                  </div>
-                )}
+                {testError && <Alert tone="error">{testError}</Alert>}
 
                 <div className="space-y-6 mb-6">
                   {(activeTest.questions || []).map((q, idx) => (
-                    <div
-                      key={q.id}
-                      className="bg-white border border-gray-100 rounded-lg p-6 shadow-sm"
-                    >
+                    <Card key={q.id} padding="p-6">
                       {/* ✅ Vokabeltest-UI (2026-09-03): "term" statt
                           question_text prominent als Karteikarten-Begriff
                           zeigen, siehe TestPlayer.jsx für dieselbe Logik im
@@ -441,17 +426,20 @@ export default function KlassePage() {
                           className="w-full h-11 px-4 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
                         />
                       )}
-                    </div>
+                    </Card>
                   ))}
                 </div>
 
-                <button
+                <Button
                   type="submit"
-                  disabled={submitting}
-                  className="w-full bg-success hover:bg-success-dark text-white px-6 py-3 rounded-md font-semibold transition disabled:opacity-60"
+                  variant="success"
+                  size="lg"
+                  fullWidth
+                  loading={submitting}
+                  loadingText="Wird eingereicht…"
                 >
-                  {submitting ? 'Wird eingereicht…' : 'Klassenarbeit abschicken ✓'}
-                </button>
+                  Klassenarbeit abschicken ✓
+                </Button>
               </form>
             )
           )}
@@ -478,29 +466,18 @@ export default function KlassePage() {
           </h1>
         </div>
 
-        {error && (
-          <div className="bg-error-light border border-error text-error-dark text-sm p-3 rounded-md mb-6">
-            {error}
-          </div>
-        )}
+        {error && <Alert tone="error">{error}</Alert>}
 
         {klassenaboBanner === 'success' && (
-          <div className="flex items-start justify-between gap-3 bg-success-light border border-success/30 rounded-lg p-4 mb-6">
-            <p className="text-success-dark text-sm">
-              Zahlung erfolgreich! Dein Zugang ist jetzt freigeschaltet.
-            </p>
-            <button onClick={dismissKlassenaboBanner} className="text-success-dark/60 hover:text-success-dark flex-shrink-0">
-              <X size={16} />
-            </button>
-          </div>
+          <Alert tone="success" onDismiss={dismissKlassenaboBanner}>
+            Zahlung erfolgreich! Dein Zugang ist jetzt freigeschaltet.
+          </Alert>
         )}
+
         {klassenaboBanner === 'cancel' && (
-          <div className="flex items-start justify-between gap-3 bg-gray-100 border border-gray-200 rounded-lg p-4 mb-6">
-            <p className="text-gray-600 text-sm">Der Bezahlvorgang wurde abgebrochen, es wurde nichts abgebucht.</p>
-            <button onClick={dismissKlassenaboBanner} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
-              <X size={16} />
-            </button>
-          </div>
+          <Alert tone="neutral" onDismiss={dismissKlassenaboBanner}>
+            Der Bezahlvorgang wurde abgebrochen, es wurde nichts abgebucht.
+          </Alert>
         )}
 
         <Link
@@ -511,18 +488,15 @@ export default function KlassePage() {
         </Link>
 
         {sources.length === 0 ? (
-          <div className="bg-cream border border-gray-100 rounded-lg p-8 text-center">
+          <Card tone="muted" padding="p-8" className="text-center">
             <p className="text-gray-500 text-sm">
               Deine Lehrkraft hat noch keine Klassenarbeit für diese Klasse hochgeladen.
             </p>
-          </div>
+          </Card>
         ) : (
           <div className="space-y-3">
             {sources.map((source) => (
-              <div
-                key={source.id}
-                className="bg-white border border-gray-100 rounded-lg p-5 shadow-sm flex items-center justify-between"
-              >
+              <Card key={source.id} className="flex items-center justify-between">
                 <div>
                   <p className="font-semibold text-gray-900">{source.title}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{source.questionCount} Fragen</p>
@@ -533,22 +507,20 @@ export default function KlassePage() {
                     </p>
                   )}
                 </div>
-                <button
+                <Button
+                  variant={source.completed ? 'secondary' : 'primary'}
                   onClick={() =>
                     source.completed ? handleViewResult(source.id) : handleStartTest(source.id)
                   }
-                  className={`px-4 py-2 rounded-md font-semibold text-sm transition ${
-                    source.completed
-                      ? 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-700'
-                      : 'bg-primary hover:bg-primary-dark text-white'
-                  }`}
                 >
                   {source.completed ? 'Nochmal ansehen' : 'Test starten'}
-                </button>
-              </div>
+                </Button>
+              </Card>
             ))}
           </div>
         )}
+
+        <Footer />
       </div>
     </div>
   );

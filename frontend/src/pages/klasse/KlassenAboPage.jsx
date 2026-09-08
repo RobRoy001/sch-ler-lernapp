@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Users, CheckCircle, Copy, Check, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Users, CheckCircle, Copy, Check } from 'lucide-react';
 import Logo from '../../components/Logo';
+import Button from '../../components/Button';
+import Card from '../../components/Card';
+import Alert from '../../components/Alert';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import Footer from '../../components/Footer';
 import { API_BASE_URL } from '../../config/api';
 
 // ✅ Klassen-Abo-Sammelzahlung (2026-09-07, siehe LernApp-Preismodell-
@@ -16,6 +21,10 @@ import { API_BASE_URL } from '../../config/api';
 // wer ihn öffnet, muss dafür nur mit dem Kind-Konto eingeloggt und Mitglied
 // dieser Klasse sein (serverseitig geprüft, siehe routes/classes.js
 // GET .../klassenabo-status und routes/billing.js POST /checkout).
+//
+// ✅ Design-Refactor (2026-09-07): siehe LehrerKlassePage.jsx - gleiche
+// gemeinsame Komponenten, gleiche Begründung. AlertTriangle-Icon kommt
+// jetzt aus Alert.jsx statt hier einzeln importiert zu werden.
 export default function KlassenAboPage() {
   const { classId } = useParams();
   const navigate = useNavigate();
@@ -43,6 +52,7 @@ export default function KlassenAboPage() {
         setLoading(false);
       }
     };
+
     loadStatus();
   }, [classId]);
 
@@ -78,11 +88,7 @@ export default function KlassenAboPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-canvas flex items-center justify-center">
-        <p className="text-gray-500 font-body">Wird geladen…</p>
-      </div>
-    );
+    return <LoadingSpinner />;
   }
 
   const priceEuro = status ? (status.pricePerStudentCents / 100).toFixed(2).replace('.', ',') : '';
@@ -106,14 +112,9 @@ export default function KlassenAboPage() {
           <p className="text-gray-500 text-sm mb-8">für die Klasse „{status.className}“</p>
         )}
 
-        {error && (
-          <div className="flex items-start gap-3 p-4 bg-error-light border border-error/20 rounded-lg mb-6">
-            <AlertTriangle size={18} className="text-error-dark flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-error-dark">{error}</p>
-          </div>
-        )}
+        {error && <Alert tone="error">{error}</Alert>}
 
-        <div className="bg-white border border-gray-100 rounded-lg p-6 shadow-sm mb-6">
+        <Card padding="p-6" className="mb-6">
           <p className="text-gray-700 text-sm mb-4">
             Statt für jedes Kind einzeln ein Pro-Abo abzuschließen, kann jede Familie hier für ihr
             eigenes Kind zum ermäßigten Klassen-Preis zahlen. Sobald{' '}
@@ -121,6 +122,7 @@ export default function KlassenAboPage() {
             der Zugang für ALLE übrigen Mitglieder der Klasse automatisch mit freigeschaltet - auch
             für später beitretende.
           </p>
+
           <div className="flex items-baseline gap-2 mb-1">
             <span className="font-display text-3xl font-bold text-gray-900">{priceEuro} €</span>
             <span className="text-gray-500 text-sm">/ Schüler:in / Jahr</span>
@@ -134,37 +136,41 @@ export default function KlassenAboPage() {
           </div>
 
           {status?.alreadyActive ? (
-            <div className="flex items-center gap-2 bg-success-light border border-success/30 rounded-lg p-4 text-success-dark text-sm">
-              <CheckCircle size={18} className="flex-shrink-0" />
+            <Alert tone="success">
               {status.capReached
                 ? 'Diese Klasse hat die Kappungsgrenze bereits erreicht - alle Mitglieder sind automatisch freigeschaltet.'
                 : 'Du hast bereits Zugang (eigenes Abo oder eigener Kauf).'}
-            </div>
+            </Alert>
           ) : (
-            <button
+            <Button
+              variant="primary"
+              size="lg"
+              fullWidth
+              loading={checkoutLoading}
               onClick={handleCheckout}
-              disabled={checkoutLoading}
-              className="w-full bg-primary hover:bg-primary-dark disabled:opacity-60 text-white px-6 py-3 rounded-md font-semibold transition"
             >
-              {checkoutLoading ? 'Wird geladen…' : `Jetzt für mein Kind zahlen (${priceEuro} €/Jahr)`}
-            </button>
+              {`Jetzt für mein Kind zahlen (${priceEuro} €/Jahr)`}
+            </Button>
           )}
-        </div>
+        </Card>
 
-        <div className="bg-cream border border-gray-100 rounded-lg p-5">
+        <Card tone="muted" shadow={false}>
           <p className="text-sm font-semibold text-gray-900 mb-2">Diesen Link mit anderen Eltern teilen</p>
           <p className="text-xs text-gray-500 mb-3">
             Jede Familie öffnet diesen Link mit dem eigenen Kind-Konto und zahlt für ihr Kind selbst -
             aus rechtlichen Gründen kann niemand für ein fremdes Kind mitbezahlen.
           </p>
-          <button
+          <Button
+            variant="secondary"
+            icon={linkCopied ? Check : Copy}
+            iconClassName={linkCopied ? 'text-success' : ''}
             onClick={handleCopyLink}
-            className="flex items-center gap-2 text-sm bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-md font-medium transition"
           >
-            {linkCopied ? <Check size={16} className="text-success" /> : <Copy size={16} />}
             {linkCopied ? 'Link kopiert!' : 'Link kopieren'}
-          </button>
-        </div>
+          </Button>
+        </Card>
+
+        <Footer />
       </div>
     </div>
   );
